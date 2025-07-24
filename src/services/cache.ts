@@ -277,21 +277,33 @@ class CacheManager {
     // Подписка на изменения кураторов
     subscribeToCurators(callback: (curators: Curator[]) => void): () => void {
         console.log('🔄 Подписываемся на кураторов из Firebase');
-        const q = query(collection(db, 'curators'), orderBy('createdAt', 'desc'));
+        const q = query(
+            collection(db, 'users'),
+            where('role', '==', 'curator'),
+            orderBy('createdAt', 'desc')
+        );
 
         const unsubscribe = onSnapshot(q, (querySnapshot) => {
+            console.log('📦 Firebase: Получены изменения в коллекции users для кураторов');
             const curators: Curator[] = [];
             querySnapshot.forEach((doc) => {
                 const data = doc.data();
-                curators.push({
+                const curator: Curator = {
                     uid: doc.id,
                     name: data.name,
                     email: data.email,
                     phone: data.phone,
                     assignedObjects: data.assignedObjects || [],
                     createdAt: data.createdAt?.toDate() || new Date(),
-                    role: 'curator',
+                    role: 'curator' as const,
                     status: data.status || 'working'
+                };
+                curators.push(curator);
+                console.log('👤 Firebase: Куратор:', {
+                    uid: curator.uid,
+                    name: curator.name,
+                    assignedObjectsCount: curator.assignedObjects.length,
+                    assignedObjects: curator.assignedObjects
                 });
             });
 
@@ -300,11 +312,58 @@ class CacheManager {
             this.cache.lastUpdated.curators = Date.now();
             this.saveToStorage();
 
-            console.log('📦 Обновлен кэш кураторов');
+            console.log('📦 Обновлен кэш кураторов, всего кураторов:', curators.length);
             callback(curators);
+        }, (error) => {
+            console.error('❌ Ошибка подписки на кураторов:', error);
+            // В случае ошибки возвращаем пустой массив
+            callback([]);
         });
 
         this.listeners.curators = unsubscribe;
+        return unsubscribe;
+    }
+
+    // Подписка на конкретного куратора
+    subscribeToSpecificCurator(curatorId: string, callback: (curator: Curator | null) => void): () => void {
+        console.log('🔄 Подписываемся на конкретного куратора из Firebase:', curatorId);
+        const q = query(
+            collection(db, 'users'),
+            where('role', '==', 'curator'),
+            where('__name__', '==', curatorId)
+        );
+
+        const unsubscribe = onSnapshot(q, (querySnapshot) => {
+            console.log('📦 Firebase: Получены изменения для конкретного куратора:', curatorId);
+            if (querySnapshot.empty) {
+                console.log('❌ Firebase: Куратор не найден:', curatorId);
+                callback(null);
+                return;
+            }
+
+            const doc = querySnapshot.docs[0];
+            const data = doc.data();
+            const curator: Curator = {
+                uid: doc.id,
+                name: data.name,
+                email: data.email,
+                phone: data.phone,
+                assignedObjects: data.assignedObjects || [],
+                createdAt: data.createdAt?.toDate() || new Date(),
+                role: 'curator' as const,
+                status: data.status || 'working'
+            };
+
+            console.log('🎯 Firebase: Обновлен конкретный куратор:', {
+                uid: curator.uid,
+                name: curator.name,
+                assignedObjectsCount: curator.assignedObjects.length,
+                assignedObjects: curator.assignedObjects
+            });
+
+            callback(curator);
+        });
+
         return unsubscribe;
     }
 
@@ -507,4 +566,4 @@ class CacheManager {
 }
 
 // Экспортируем единственный экземпляр
-export const cacheManager = new CacheManager(); 
+export const cacheManager = new CacheManager();

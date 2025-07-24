@@ -81,43 +81,51 @@ const CuratorPanel = () => {
     // Отдельный useEffect для подписки на изменения объектов и кураторов
     useEffect(() => {
         if (user?.uid && curator) {
+            console.log('🔄 CuratorPanel: Настраиваем real-time подписки для куратора:', user.uid);
+
+            let currentObjects: ObjectData[] = [];
+
             // Подписываемся на изменения объектов в реальном времени
             const unsubscribeObjects = cacheManager.subscribeToObjects((updatedObjects) => {
-                console.log('Получены обновленные объекты:', updatedObjects.length);
+                console.log('📦 CuratorPanel: Получены обновленные объекты:', updatedObjects.length);
+                currentObjects = updatedObjects;
+
+                // Фильтруем объекты куратора из обновленного списка
                 const curatorObjects = updatedObjects.filter(obj =>
                     curator.assignedObjects.includes(obj.id)
                 );
+                console.log('🏢 CuratorPanel: Объекты куратора после фильтрации:', curatorObjects.length);
                 setObjects(curatorObjects);
             });
 
             // Подписываемся на изменения кураторов в реальном времени
             const unsubscribeCurators = cacheManager.subscribeToCurators((updatedCurators) => {
-                console.log('Получены обновленные кураторы:', updatedCurators.length);
+                console.log('👥 CuratorPanel: Получены обновленные кураторы:', updatedCurators.length);
                 const currentCurator = updatedCurators.find(c => c.uid === user.uid);
                 if (currentCurator) {
-                    console.log('Обновлены данные куратора:', {
+                    console.log('✅ CuratorPanel: Обновлены данные куратора:', {
                         uid: currentCurator.uid,
                         assignedObjectsCount: currentCurator.assignedObjects.length,
                         assignedObjects: currentCurator.assignedObjects
                     });
                     setCurator(currentCurator);
 
-                    // Обновляем список объектов куратора
-                    cacheManager.getObjects().then(allObjects => {
-                        const curatorObjects = allObjects.filter(obj =>
-                            currentCurator.assignedObjects.includes(obj.id)
-                        );
-                        setObjects(curatorObjects);
-                    });
+                    // Обновляем список объектов куратора из уже полученных объектов
+                    const curatorObjects = currentObjects.filter(obj =>
+                        currentCurator.assignedObjects.includes(obj.id)
+                    );
+                    console.log('🏢 CuratorPanel: Обновлены объекты куратора после изменения назначений:', curatorObjects.length);
+                    setObjects(curatorObjects);
                 }
             });
 
             return () => {
+                console.log('🔄 CuratorPanel: Отписываемся от real-time подписок');
                 if (unsubscribeObjects) unsubscribeObjects();
                 if (unsubscribeCurators) unsubscribeCurators();
             };
         }
-    }, [user?.uid, curator?.assignedObjects]);
+    }, [user?.uid, curator?.uid]); // Изменена зависимость для более точного отслеживания
 
     useEffect(() => {
         if (user) {

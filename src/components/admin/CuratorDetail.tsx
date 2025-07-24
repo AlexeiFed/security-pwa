@@ -689,6 +689,11 @@ const CuratorDetail = () => {
                             // обновить объекты куратора через сервис
                             if (curator) {
                                 await (await import('../../services/auth')).updateCuratorObjects(curator.uid, editAssignedObjects);
+
+                                // Очищаем кэш кураторов для real-time обновления
+                                const { cacheManager } = await import('../../services/cache');
+                                cacheManager.clearCache('curators');
+
                                 setEditDialogOpen(false);
                                 loadCuratorData();
                             }
@@ -715,6 +720,11 @@ const CuratorDetail = () => {
                                 setDeleting(true);
                                 const newAssigned = curator.assignedObjects.filter(id => id !== objectToDelete);
                                 await (await import('../../services/auth')).updateCuratorObjects(curator.uid, newAssigned);
+
+                                // Очищаем кэш кураторов для real-time обновления
+                                const { cacheManager } = await import('../../services/cache');
+                                cacheManager.clearCache('curators');
+
                                 setDeleting(false);
                                 setDeleteDialogOpen(false);
                                 setObjectToDelete(null);

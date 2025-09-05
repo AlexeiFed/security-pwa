@@ -5,7 +5,7 @@
  * @created: 2025-01-23
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Box,
     AppBar,
@@ -34,6 +34,9 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { getObjects } from '../../services/objects';
+import { ObjectData } from '../../types';
+import AlarmButton from '../admin/AlarmButton';
 
 interface AdminMobileHeaderProps {
     title?: string;
@@ -41,9 +44,23 @@ interface AdminMobileHeaderProps {
 
 const AdminMobileHeader: React.FC<AdminMobileHeaderProps> = ({ title = 'Админ панель' }) => {
     const [drawerOpen, setDrawerOpen] = useState(false);
+    const [objects, setObjects] = useState<ObjectData[]>([]);
     const navigate = useNavigate();
     const { logout } = useAuth();
     // Responsive настройки не требуются в зафиксированной шапке
+
+    // Загружаем объекты для тревожной кнопки
+    useEffect(() => {
+        const loadObjects = async () => {
+            try {
+                const objectsData = await getObjects();
+                setObjects(objectsData);
+            } catch (error) {
+                console.error('Ошибка загрузки объектов:', error);
+            }
+        };
+        loadObjects();
+    }, []);
 
     const menuItems = [
         {
@@ -124,6 +141,16 @@ const AdminMobileHeader: React.FC<AdminMobileHeaderProps> = ({ title = 'Адми
                         <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
                             ЧОО "ВИТЯЗЬ"
                         </Typography>
+                    </Box>
+
+                    {/* Тревожная кнопка */}
+                    <Box sx={{ mr: 2 }}>
+                        <AlarmButton 
+                            objects={objects}
+                            onAlarmSent={(success, message) => {
+                                console.log('Тревожный вызов:', success ? 'Успешно' : 'Ошибка', message);
+                            }}
+                        />
                     </Box>
 
                     <IconButton

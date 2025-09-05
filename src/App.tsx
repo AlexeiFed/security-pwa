@@ -13,6 +13,8 @@ import MuiAlert from '@mui/material/Alert';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import LoginForm from './components/auth/LoginForm';
 import UserInitialization from './components/admin/UserInitialization';
+import { getObjects } from './services/objects';
+import { ObjectData } from './types';
 import Header from './components/common/Header';
 import AdminMobileHeader from './components/common/AdminMobileHeader';
 import ObjectManagement from './components/admin/ObjectManagement';
@@ -39,6 +41,7 @@ import GuardPanel from './components/guard/GuardPanel';
 import GuardUserProfilePage from './components/guard/GuardUserProfilePage';
 import PushNotificationPanel from './components/admin/PushNotificationPanel';
 import AdminProfile from './components/admin/AdminProfile';
+import AlarmButton from './components/admin/AlarmButton';
 import { AlarmScreen } from './components/inspector/AlarmScreen';
 import ObjectDetailScreen from './components/admin/ObjectDetailScreen';
 import GroupsIcon from '@mui/icons-material/Groups';
@@ -389,6 +392,7 @@ const AdminPanel = () => {
     const [activeAlert, setActiveAlert] = React.useState<AlertType | null>(null);
     const [showAlarm, setShowAlarm] = React.useState(false);
     const [alarmDismissed, setAlarmDismissed] = React.useState(false);
+    const [objects, setObjects] = React.useState<ObjectData[]>([]);
     // const [notificationStatus, setNotificationStatus] = React.useState<string>('Проверка...');
 
     // Обработчики навигации с useCallback для стабильности
@@ -460,6 +464,19 @@ const AdminPanel = () => {
         }
     }, [user]);
 
+    // Загружаем объекты для тревожной кнопки
+    React.useEffect(() => {
+        const loadObjects = async () => {
+            try {
+                const objectsData = await getObjects();
+                setObjects(objectsData);
+            } catch (error) {
+                console.error('Ошибка загрузки объектов:', error);
+            }
+        };
+        loadObjects();
+    }, []);
+
     console.log('🔍 Состояние компонента:', { activeAlert: !!activeAlert, alarmDismissed, showAlarm });
 
     return (
@@ -521,6 +538,16 @@ const AdminPanel = () => {
                     hideTitle={true}
                     showProfileMenu={true}
                     onProfileClick={() => navigate('/admin/profile')}
+                    action={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <AlarmButton 
+                                objects={objects}
+                                onAlarmSent={(success, message) => {
+                                    console.log('Тревожный вызов:', success ? 'Успешно' : 'Ошибка', message);
+                                }}
+                            />
+                        </Box>
+                    }
                 />
             )}
 

@@ -9,15 +9,15 @@ import { getAlarmPhoneNumbers } from './phoneService';
 
 // Конфигурация CallDog API
 const CALLDOG_CONFIG = {
-  API_KEY: process.env.REACT_APP_CALLDOG_API_KEY || 'YOUR_API_KEY_HERE',
-  BASE_URL: 'https://lk.calldog.ru/apiCalls',
-  OUTGOING_PHONE: process.env.REACT_APP_CALLDOG_OUTGOING_PHONE || '+79242074048', // Номер для исходящих звонков
-  TEST_PHONE: process.env.REACT_APP_CALLDOG_OUTGOING_PHONE || '+79242074048', // Тестовый номер
-  RECORD_TEXT: 'ТРЕВОГА! На объекте {objectName} произошло нападение! Немедленно прибыть на место! Адрес: {objectAddress}',
-  RECORD_GENDER: 0, // 0 - женский, 1 - мужской
-  ANSWER_TIMEOUT: 30, // Время ожидания ответа в секундах
-  SMART_DELAY: 5, // Повторный обзвон через 5 минут
-  NEED_RECORDING: 1 // Записывать звонки
+    API_KEY: process.env.REACT_APP_CALLDOG_API_KEY || 'YOUR_API_KEY_HERE',
+    BASE_URL: 'https://lk.calldog.ru/apiCalls',
+    OUTGOING_PHONE: process.env.REACT_APP_CALLDOG_OUTGOING_PHONE || '+79242074048', // Номер для исходящих звонков
+    TEST_PHONE: process.env.REACT_APP_CALLDOG_OUTGOING_PHONE || '+79242074048', // Тестовый номер
+    RECORD_TEXT: 'ТРЕВОГА! На объекте {objectName} произошло нападение! Немедленно прибыть на место! Адрес: {objectAddress}',
+    RECORD_GENDER: 0, // 0 - женский, 1 - мужской
+    ANSWER_TIMEOUT: 30, // Время ожидания ответа в секундах
+    SMART_DELAY: 5, // Повторный обзвон через 5 минут
+    NEED_RECORDING: 1 // Записывать звонки
 };
 
 export interface AlarmCallData {
@@ -64,37 +64,37 @@ export async function sendAlarmCall(alarmData: AlarmCallData): Promise<CallDogRe
             .replace('{objectName}', alarmData.objectName)
             .replace('{objectAddress}', alarmData.objectAddress);
 
-        // Подготавливаем данные для API
-        const requestData = {
-            apiKey: CALLDOG_CONFIG.API_KEY,
-            phones: phoneNumbers,
-            outgoingPhone: CALLDOG_CONFIG.OUTGOING_PHONE,
-            record: {
-                text: messageText,
-                gender: CALLDOG_CONFIG.RECORD_GENDER
-            },
-            answerTimeout: CALLDOG_CONFIG.ANSWER_TIMEOUT,
-            smartDelay: CALLDOG_CONFIG.SMART_DELAY,
-            needRecording: CALLDOG_CONFIG.NEED_RECORDING,
-            ivrs: [
-                {
-                    digit: 1,
-                    needBlock: 0,
-                    smsText: `ТРЕВОГА! ${alarmData.objectName} - ${alarmData.objectAddress}. Немедленно прибыть!`
-                },
-                {
-                    digit: 2,
-                    needBlock: 0,
-                    managerPhone: CALLDOG_CONFIG.OUTGOING_PHONE
-                }
-            ],
-            webhookUrl: `${window.location.origin}/api/callDog/webhook`,
-            webhookParameters: JSON.stringify({
-                alarmId: Date.now().toString(),
-                objectName: alarmData.objectName,
-                objectAddress: alarmData.objectAddress
-            })
-        };
+            // Подготавливаем данные для API
+    const requestData = {
+      apiKey: CALLDOG_CONFIG.API_KEY,
+      phones: phoneNumbers,
+      dutyPhone: 1, // Используем системные номера CallDog
+      record: {
+        text: messageText,
+        gender: CALLDOG_CONFIG.RECORD_GENDER
+      },
+      answerTimeout: CALLDOG_CONFIG.ANSWER_TIMEOUT,
+      smartDelay: CALLDOG_CONFIG.SMART_DELAY,
+      needRecording: CALLDOG_CONFIG.NEED_RECORDING,
+      ivrs: [
+        {
+          digit: 1,
+          needBlock: 0,
+          smsText: `ТРЕВОГА! ${alarmData.objectName} - ${alarmData.objectAddress}. Немедленно прибыть!`
+        },
+        {
+          digit: 2,
+          needBlock: 0,
+          managerPhone: CALLDOG_CONFIG.OUTGOING_PHONE
+        }
+      ],
+      webhookUrl: `https://push-server-b8p6.onrender.com/callDog/webhook`,
+      webhookParameters: JSON.stringify({
+        alarmId: Date.now().toString(),
+        objectName: alarmData.objectName,
+        objectAddress: alarmData.objectAddress
+      })
+    };
 
         console.log('Данные для CallDog API:', requestData);
 
@@ -141,17 +141,17 @@ export async function sendTestCall(phone: string, message: string = 'Тесто�
     try {
         console.log('Отправка тестового вызова на номер:', phone);
 
-        const requestData = {
-            apiKey: CALLDOG_CONFIG.API_KEY,
-            phone: phone,
-            outgoingPhone: CALLDOG_CONFIG.OUTGOING_PHONE,
-            record: {
-                text: message,
-                gender: CALLDOG_CONFIG.RECORD_GENDER
-            },
-            answerTimeout: CALLDOG_CONFIG.ANSWER_TIMEOUT,
-            needRecording: 0 // Не записываем тестовые звонки
-        };
+            const requestData = {
+      apiKey: CALLDOG_CONFIG.API_KEY,
+      phone: phone,
+      dutyPhone: 1, // Используем системные номера CallDog
+      record: {
+        text: message,
+        gender: CALLDOG_CONFIG.RECORD_GENDER
+      },
+      answerTimeout: CALLDOG_CONFIG.ANSWER_TIMEOUT,
+      needRecording: 0 // Не записываем тестовые звонки
+    };
 
         const response = await fetch(`${CALLDOG_CONFIG.BASE_URL}/create`, {
             method: 'POST',
@@ -223,23 +223,23 @@ export async function getCallInfo(callId: string): Promise<CallDogCallInfo | nul
  */
 export async function checkCallDogStatus(): Promise<boolean> {
     try {
-        // Простой тестовый запрос для проверки доступности API
-        const response = await fetch(`${CALLDOG_CONFIG.BASE_URL}/create`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            },
-            body: JSON.stringify({
-                apiKey: CALLDOG_CONFIG.API_KEY,
-                phone: CALLDOG_CONFIG.TEST_PHONE,
-                outgoingPhone: CALLDOG_CONFIG.OUTGOING_PHONE,
-                record: {
-                    text: 'Тест подключения к CallDog API',
-                    gender: CALLDOG_CONFIG.RECORD_GENDER
-                }
-            })
-        });
+            // Простой тестовый запрос для проверки доступности API
+    const response = await fetch(`${CALLDOG_CONFIG.BASE_URL}/create`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        apiKey: CALLDOG_CONFIG.API_KEY,
+        phone: CALLDOG_CONFIG.TEST_PHONE,
+        dutyPhone: 1, // Используем системные номера CallDog
+        record: {
+          text: 'Тест подключения к CallDog API',
+          gender: CALLDOG_CONFIG.RECORD_GENDER
+        }
+      })
+    });
 
         return response.ok;
 

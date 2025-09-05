@@ -540,7 +540,7 @@ const AdminPanel = () => {
                     onProfileClick={() => navigate('/admin/profile')}
                     action={
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            <AlarmButton 
+                            <AlarmButton
                                 objects={objects}
                                 onAlarmSent={(success, message) => {
                                     console.log('Тревожный вызов:', success ? 'Успешно' : 'Ошибка', message);

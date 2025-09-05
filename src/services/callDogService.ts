@@ -11,8 +11,8 @@ import { getAlarmPhoneNumbers } from './phoneService';
 const CALLDOG_CONFIG = {
   API_KEY: process.env.REACT_APP_CALLDOG_API_KEY || 'YOUR_API_KEY_HERE',
   BASE_URL: 'https://lk.calldog.ru/apiCalls',
-  OUTGOING_PHONE: '+79242074048', // Номер для исходящих звонков
-  TEST_PHONE: '+79242074048', // Тестовый номер
+  OUTGOING_PHONE: process.env.REACT_APP_CALLDOG_OUTGOING_PHONE || '+79242074048', // Номер для исходящих звонков
+  TEST_PHONE: process.env.REACT_APP_CALLDOG_OUTGOING_PHONE || '+79242074048', // Тестовый номер
   RECORD_TEXT: 'ТРЕВОГА! На объекте {objectName} произошло нападение! Немедленно прибыть на место! Адрес: {objectAddress}',
   RECORD_GENDER: 0, // 0 - женский, 1 - мужской
   ANSWER_TIMEOUT: 30, // Время ожидания ответа в секундах
@@ -21,26 +21,26 @@ const CALLDOG_CONFIG = {
 };
 
 export interface AlarmCallData {
-  objectName: string;
-  objectAddress: string;
-  message?: string;
-  phones?: string[];
+    objectName: string;
+    objectAddress: string;
+    message?: string;
+    phones?: string[];
 }
 
 export interface CallDogResponse {
-  success: boolean;
-  callId?: string;
-  message?: string;
-  error?: string;
+    success: boolean;
+    callId?: string;
+    message?: string;
+    error?: string;
 }
 
 export interface CallDogCallInfo {
-  id: string;
-  status: string;
-  phone: string;
-  answer?: string;
-  recordPath?: string;
-  createdAt: string;
+    id: string;
+    status: string;
+    phone: string;
+    answer?: string;
+    recordPath?: string;
+    createdAt: string;
 }
 
 /**
@@ -49,86 +49,86 @@ export interface CallDogCallInfo {
  * @returns Promise<CallDogResponse> - результат отправки
  */
 export async function sendAlarmCall(alarmData: AlarmCallData): Promise<CallDogResponse> {
-  try {
-    console.log('Отправка тревожного вызова:', alarmData);
+    try {
+        console.log('Отправка тревожного вызова:', alarmData);
 
-    // Получаем номера телефонов для обзвона
-    const phoneNumbers = alarmData.phones || await getAlarmPhoneNumbers();
-    
-    if (phoneNumbers.length === 0) {
-      throw new Error('Нет номеров телефонов для обзвона');
-    }
+        // Получаем номера телефонов для обзвона
+        const phoneNumbers = alarmData.phones || await getAlarmPhoneNumbers();
 
-    // Формируем текст сообщения
-    const messageText = alarmData.message || CALLDOG_CONFIG.RECORD_TEXT
-      .replace('{objectName}', alarmData.objectName)
-      .replace('{objectAddress}', alarmData.objectAddress);
-
-    // Подготавливаем данные для API
-    const requestData = {
-      apiKey: CALLDOG_CONFIG.API_KEY,
-      phones: phoneNumbers,
-      outgoingPhone: CALLDOG_CONFIG.OUTGOING_PHONE,
-      record: {
-        text: messageText,
-        gender: CALLDOG_CONFIG.RECORD_GENDER
-      },
-      answerTimeout: CALLDOG_CONFIG.ANSWER_TIMEOUT,
-      smartDelay: CALLDOG_CONFIG.SMART_DELAY,
-      needRecording: CALLDOG_CONFIG.NEED_RECORDING,
-      ivrs: [
-        {
-          digit: 1,
-          needBlock: 0,
-          smsText: `ТРЕВОГА! ${alarmData.objectName} - ${alarmData.objectAddress}. Немедленно прибыть!`
-        },
-        {
-          digit: 2,
-          needBlock: 0,
-          managerPhone: CALLDOG_CONFIG.OUTGOING_PHONE
+        if (phoneNumbers.length === 0) {
+            throw new Error('Нет номеров телефонов для обзвона');
         }
-      ],
-      webhookUrl: `${window.location.origin}/api/callDog/webhook`,
-      webhookParameters: JSON.stringify({
-        alarmId: Date.now().toString(),
-        objectName: alarmData.objectName,
-        objectAddress: alarmData.objectAddress
-      })
-    };
 
-    console.log('Данные для CallDog API:', requestData);
+        // Формируем текст сообщения
+        const messageText = alarmData.message || CALLDOG_CONFIG.RECORD_TEXT
+            .replace('{objectName}', alarmData.objectName)
+            .replace('{objectAddress}', alarmData.objectAddress);
 
-    // Отправляем запрос к CallDog API
-    const response = await fetch(`${CALLDOG_CONFIG.BASE_URL}/create`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify(requestData)
-    });
+        // Подготавливаем данные для API
+        const requestData = {
+            apiKey: CALLDOG_CONFIG.API_KEY,
+            phones: phoneNumbers,
+            outgoingPhone: CALLDOG_CONFIG.OUTGOING_PHONE,
+            record: {
+                text: messageText,
+                gender: CALLDOG_CONFIG.RECORD_GENDER
+            },
+            answerTimeout: CALLDOG_CONFIG.ANSWER_TIMEOUT,
+            smartDelay: CALLDOG_CONFIG.SMART_DELAY,
+            needRecording: CALLDOG_CONFIG.NEED_RECORDING,
+            ivrs: [
+                {
+                    digit: 1,
+                    needBlock: 0,
+                    smsText: `ТРЕВОГА! ${alarmData.objectName} - ${alarmData.objectAddress}. Немедленно прибыть!`
+                },
+                {
+                    digit: 2,
+                    needBlock: 0,
+                    managerPhone: CALLDOG_CONFIG.OUTGOING_PHONE
+                }
+            ],
+            webhookUrl: `${window.location.origin}/api/callDog/webhook`,
+            webhookParameters: JSON.stringify({
+                alarmId: Date.now().toString(),
+                objectName: alarmData.objectName,
+                objectAddress: alarmData.objectAddress
+            })
+        };
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`CallDog API error: ${errorData.message || response.statusText}`);
+        console.log('Данные для CallDog API:', requestData);
+
+        // Отправляем запрос к CallDog API
+        const response = await fetch(`${CALLDOG_CONFIG.BASE_URL}/create`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(requestData)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`CallDog API error: ${errorData.message || response.statusText}`);
+        }
+
+        const result = await response.json();
+        console.log('Ответ от CallDog API:', result);
+
+        return {
+            success: true,
+            callId: result.id?.toString(),
+            message: 'Тревожный вызов успешно отправлен'
+        };
+
+    } catch (error: any) {
+        console.error('Ошибка отправки тревожного вызова:', error);
+        return {
+            success: false,
+            error: error.message || 'Неизвестная ошибка при отправке вызова'
+        };
     }
-
-    const result = await response.json();
-    console.log('Ответ от CallDog API:', result);
-
-    return {
-      success: true,
-      callId: result.id?.toString(),
-      message: 'Тревожный вызов успешно отправлен'
-    };
-
-  } catch (error: any) {
-    console.error('Ошибка отправки тревожного вызова:', error);
-    return {
-      success: false,
-      error: error.message || 'Неизвестная ошибка при отправке вызова'
-    };
-  }
 }
 
 /**
@@ -138,51 +138,51 @@ export async function sendAlarmCall(alarmData: AlarmCallData): Promise<CallDogRe
  * @returns Promise<CallDogResponse> - результат отправки
  */
 export async function sendTestCall(phone: string, message: string = 'Тестовый вызов от системы безопасности'): Promise<CallDogResponse> {
-  try {
-    console.log('Отправка тестового вызова на номер:', phone);
+    try {
+        console.log('Отправка тестового вызова на номер:', phone);
 
-    const requestData = {
-      apiKey: CALLDOG_CONFIG.API_KEY,
-      phone: phone,
-      outgoingPhone: CALLDOG_CONFIG.OUTGOING_PHONE,
-      record: {
-        text: message,
-        gender: CALLDOG_CONFIG.RECORD_GENDER
-      },
-      answerTimeout: CALLDOG_CONFIG.ANSWER_TIMEOUT,
-      needRecording: 0 // Не записываем тестовые звонки
-    };
+        const requestData = {
+            apiKey: CALLDOG_CONFIG.API_KEY,
+            phone: phone,
+            outgoingPhone: CALLDOG_CONFIG.OUTGOING_PHONE,
+            record: {
+                text: message,
+                gender: CALLDOG_CONFIG.RECORD_GENDER
+            },
+            answerTimeout: CALLDOG_CONFIG.ANSWER_TIMEOUT,
+            needRecording: 0 // Не записываем тестовые звонки
+        };
 
-    const response = await fetch(`${CALLDOG_CONFIG.BASE_URL}/create`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify(requestData)
-    });
+        const response = await fetch(`${CALLDOG_CONFIG.BASE_URL}/create`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(requestData)
+        });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`CallDog API error: ${errorData.message || response.statusText}`);
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`CallDog API error: ${errorData.message || response.statusText}`);
+        }
+
+        const result = await response.json();
+        console.log('Ответ от CallDog API (тест):', result);
+
+        return {
+            success: true,
+            callId: result.id?.toString(),
+            message: 'Тестовый вызов успешно отправлен'
+        };
+
+    } catch (error: any) {
+        console.error('Ошибка отправки тестового вызова:', error);
+        return {
+            success: false,
+            error: error.message || 'Неизвестная ошибка при отправке тестового вызова'
+        };
     }
-
-    const result = await response.json();
-    console.log('Ответ от CallDog API (тест):', result);
-
-    return {
-      success: true,
-      callId: result.id?.toString(),
-      message: 'Тестовый вызов успешно отправлен'
-    };
-
-  } catch (error: any) {
-    console.error('Ошибка отправки тестового вызова:', error);
-    return {
-      success: false,
-      error: error.message || 'Неизвестная ошибка при отправке тестового вызова'
-    };
-  }
 }
 
 /**
@@ -191,30 +191,30 @@ export async function sendTestCall(phone: string, message: string = 'Тесто�
  * @returns Promise<CallDogCallInfo | null> - информация о звонке
  */
 export async function getCallInfo(callId: string): Promise<CallDogCallInfo | null> {
-  try {
-    const response = await fetch(`${CALLDOG_CONFIG.BASE_URL}/info`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify({
-        apiKey: CALLDOG_CONFIG.API_KEY,
-        id: callId
-      })
-    });
+    try {
+        const response = await fetch(`${CALLDOG_CONFIG.BASE_URL}/info`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+                apiKey: CALLDOG_CONFIG.API_KEY,
+                id: callId
+            })
+        });
 
-    if (!response.ok) {
-      throw new Error(`Ошибка получения информации о звонке: ${response.statusText}`);
+        if (!response.ok) {
+            throw new Error(`Ошибка получения информации о звонке: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        return result;
+
+    } catch (error: any) {
+        console.error('Ошибка получения информации о звонке:', error);
+        return null;
     }
-
-    const result = await response.json();
-    return result;
-
-  } catch (error: any) {
-    console.error('Ошибка получения информации о звонке:', error);
-    return null;
-  }
 }
 
 /**
@@ -222,31 +222,31 @@ export async function getCallInfo(callId: string): Promise<CallDogCallInfo | nul
  * @returns Promise<boolean> - доступен ли API
  */
 export async function checkCallDogStatus(): Promise<boolean> {
-  try {
-    // Простой тестовый запрос для проверки доступности API
-    const response = await fetch(`${CALLDOG_CONFIG.BASE_URL}/create`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify({
-        apiKey: CALLDOG_CONFIG.API_KEY,
-        phone: CALLDOG_CONFIG.TEST_PHONE,
-        outgoingPhone: CALLDOG_CONFIG.OUTGOING_PHONE,
-        record: {
-          text: 'Тест подключения к CallDog API',
-          gender: CALLDOG_CONFIG.RECORD_GENDER
-        }
-      })
-    });
+    try {
+        // Простой тестовый запрос для проверки доступности API
+        const response = await fetch(`${CALLDOG_CONFIG.BASE_URL}/create`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+                apiKey: CALLDOG_CONFIG.API_KEY,
+                phone: CALLDOG_CONFIG.TEST_PHONE,
+                outgoingPhone: CALLDOG_CONFIG.OUTGOING_PHONE,
+                record: {
+                    text: 'Тест подключения к CallDog API',
+                    gender: CALLDOG_CONFIG.RECORD_GENDER
+                }
+            })
+        });
 
-    return response.ok;
+        return response.ok;
 
-  } catch (error) {
-    console.error('CallDog API недоступен:', error);
-    return false;
-  }
+    } catch (error) {
+        console.error('CallDog API недоступен:', error);
+        return false;
+    }
 }
 
 /**
@@ -255,28 +255,28 @@ export async function checkCallDogStatus(): Promise<boolean> {
  * @returns string - отформатированный номер
  */
 export function formatPhoneForCallDog(phone: string): string {
-  // Удаляем все символы кроме цифр
-  const digits = phone.replace(/\D/g, '');
-  
-  // Если номер начинается с +7, убираем +
-  if (phone.startsWith('+7') && digits.length === 11) {
+    // Удаляем все символы кроме цифр
+    const digits = phone.replace(/\D/g, '');
+
+    // Если номер начинается с +7, убираем +
+    if (phone.startsWith('+7') && digits.length === 11) {
+        return digits;
+    }
+
+    // Если номер начинается с 8, заменяем на 7
+    if (digits.startsWith('8') && digits.length === 11) {
+        return '7' + digits.substring(1);
+    }
+
+    // Если номер начинается с 7, возвращаем как есть
+    if (digits.startsWith('7') && digits.length === 11) {
+        return digits;
+    }
+
+    // Если номер короткий, добавляем 7
+    if (digits.length === 10) {
+        return '7' + digits;
+    }
+
     return digits;
-  }
-  
-  // Если номер начинается с 8, заменяем на 7
-  if (digits.startsWith('8') && digits.length === 11) {
-    return '7' + digits.substring(1);
-  }
-  
-  // Если номер начинается с 7, возвращаем как есть
-  if (digits.startsWith('7') && digits.length === 11) {
-    return digits;
-  }
-  
-  // Если номер короткий, добавляем 7
-  if (digits.length === 10) {
-    return '7' + digits;
-  }
-  
-  return digits;
 }

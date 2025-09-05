@@ -145,7 +145,7 @@ const AdminMobileHeader: React.FC<AdminMobileHeaderProps> = ({ title = 'Адми
 
                     {/* Тревожная кнопка */}
                     <Box sx={{ mr: 2 }}>
-                        <AlarmButton 
+                        <AlarmButton
                             objects={objects}
                             onAlarmSent={(success, message) => {
                                 console.log('Тревожный вызов:', success ? 'Успешно' : 'Ошибка', message);

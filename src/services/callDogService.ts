@@ -9,14 +9,14 @@ import { getAlarmPhoneNumbers } from './phoneService';
 
 // Конфигурация CallDog API
 const CALLDOG_CONFIG = {
-  API_KEY: process.env.REACT_APP_CALLDOG_API_KEY || 'YOUR_API_KEY_HERE',
-  BASE_URL: 'https://lk.calldog.ru/apiCalls',
-  OUTGOING_PHONE: process.env.REACT_APP_CALLDOG_OUTGOING_PHONE || '+79242074048', // Номер для исходящих звонков
-  TEST_PHONE: process.env.REACT_APP_CALLDOG_OUTGOING_PHONE || '+79242074048', // Тестовый номер
-  AUDIO_RECORD_ID: 3591895, // ID готового аудиоролика, прошедшего модерацию
-  ANSWER_TIMEOUT: 30, // Время ожидания ответа в секундах
-  SMART_DELAY: 5, // Повторный обзвон через 5 минут
-  NEED_RECORDING: 1 // Записывать звонки
+    API_KEY: process.env.REACT_APP_CALLDOG_API_KEY || 'YOUR_API_KEY_HERE',
+    BASE_URL: 'https://lk.calldog.ru/apiCalls',
+    OUTGOING_PHONE: process.env.REACT_APP_CALLDOG_OUTGOING_PHONE || '+79242074048', // Номер для исходящих звонков
+    TEST_PHONE: process.env.REACT_APP_CALLDOG_OUTGOING_PHONE || '+79242074048', // Тестовый номер
+    AUDIO_RECORD_ID: 3591895, // ID готового аудиоролика, прошедшего модерацию
+    ANSWER_TIMEOUT: 30, // Время ожидания ответа в секундах
+    SMART_DELAY: 5, // Повторный обзвон через 5 минут
+    NEED_RECORDING: 1 // Записывать звонки
 };
 
 export interface AlarmCallData {
@@ -58,36 +58,36 @@ export async function sendAlarmCall(alarmData: AlarmCallData): Promise<CallDogRe
             throw new Error('Нет номеров телефонов для обзвона');
         }
 
-            // Подготавливаем данные для API с готовым аудиороликом
-    const requestData = {
-      apiKey: CALLDOG_CONFIG.API_KEY,
-      phones: phoneNumbers,
-      dutyPhone: 1, // Используем системные номера CallDog
-      record: {
-        id: CALLDOG_CONFIG.AUDIO_RECORD_ID // Используем готовый аудиоролик
-      },
-      answerTimeout: CALLDOG_CONFIG.ANSWER_TIMEOUT,
-      smartDelay: CALLDOG_CONFIG.SMART_DELAY,
-      needRecording: CALLDOG_CONFIG.NEED_RECORDING,
-      ivrs: [
-        {
-          digit: 1,
-          needBlock: 0,
-          smsText: `ТРЕВОГА! ${alarmData.objectName} - ${alarmData.objectAddress}. Немедленно прибыть!`
-        },
-        {
-          digit: 2,
-          needBlock: 0,
-          managerPhone: CALLDOG_CONFIG.OUTGOING_PHONE
-        }
-      ],
-      webhookUrl: `https://push-server-b8p6.onrender.com/callDog/webhook`,
-      webhookParameters: JSON.stringify({
-        alarmId: Date.now().toString(),
-        objectName: alarmData.objectName,
-        objectAddress: alarmData.objectAddress
-      })
-    };
+        // Подготавливаем данные для API с готовым аудиороликом
+        const requestData = {
+            apiKey: CALLDOG_CONFIG.API_KEY,
+            phones: phoneNumbers,
+            dutyPhone: 1, // Используем системные номера CallDog
+            record: {
+                id: CALLDOG_CONFIG.AUDIO_RECORD_ID // Используем готовый аудиоролик
+            },
+            answerTimeout: CALLDOG_CONFIG.ANSWER_TIMEOUT,
+            smartDelay: CALLDOG_CONFIG.SMART_DELAY,
+            needRecording: CALLDOG_CONFIG.NEED_RECORDING,
+            ivrs: [
+                {
+                    digit: 1,
+                    needBlock: 0,
+                    smsText: `ТРЕВОГА! ${alarmData.objectName} - ${alarmData.objectAddress}. Немедленно прибыть!`
+                },
+                {
+                    digit: 2,
+                    needBlock: 0,
+                    managerPhone: CALLDOG_CONFIG.OUTGOING_PHONE
+                }
+            ],
+            webhookUrl: `https://push-server-b8p6.onrender.com/callDog/webhook`,
+            webhookParameters: JSON.stringify({
+                alarmId: Date.now().toString(),
+                objectName: alarmData.objectName,
+                objectAddress: alarmData.objectAddress
+            })
+        };
 
         console.log('Данные для CallDog API:', requestData);
 
@@ -134,16 +134,16 @@ export async function sendTestCall(phone: string, message: string = 'Тесто�
     try {
         console.log('Отправка тестового вызова на номер:', phone);
 
-            const requestData = {
-      apiKey: CALLDOG_CONFIG.API_KEY,
-      phone: phone,
-      dutyPhone: 1, // Используем системные номера CallDog
-      record: {
-        id: CALLDOG_CONFIG.AUDIO_RECORD_ID // Используем готовый аудиоролик
-      },
-      answerTimeout: CALLDOG_CONFIG.ANSWER_TIMEOUT,
-      needRecording: 0 // Не записываем тестовые звонки
-    };
+        const requestData = {
+            apiKey: CALLDOG_CONFIG.API_KEY,
+            phone: phone,
+            dutyPhone: 1, // Используем системные номера CallDog
+            record: {
+                id: CALLDOG_CONFIG.AUDIO_RECORD_ID // Используем готовый аудиоролик
+            },
+            answerTimeout: CALLDOG_CONFIG.ANSWER_TIMEOUT,
+            needRecording: 0 // Не записываем тестовые звонки
+        };
 
         const response = await fetch(`${CALLDOG_CONFIG.BASE_URL}/create`, {
             method: 'POST',
@@ -215,22 +215,22 @@ export async function getCallInfo(callId: string): Promise<CallDogCallInfo | nul
  */
 export async function checkCallDogStatus(): Promise<boolean> {
     try {
-            // Простой тестовый запрос для проверки доступности API
-    const response = await fetch(`${CALLDOG_CONFIG.BASE_URL}/create`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify({
-        apiKey: CALLDOG_CONFIG.API_KEY,
-        phone: CALLDOG_CONFIG.TEST_PHONE,
-        dutyPhone: 1, // Используем системные номера CallDog
-        record: {
-          id: CALLDOG_CONFIG.AUDIO_RECORD_ID // Используем готовый аудиоролик
-        }
-      })
-    });
+        // Простой тестовый запрос для проверки доступности API
+        const response = await fetch(`${CALLDOG_CONFIG.BASE_URL}/create`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+                apiKey: CALLDOG_CONFIG.API_KEY,
+                phone: CALLDOG_CONFIG.TEST_PHONE,
+                dutyPhone: 1, // Используем системные номера CallDog
+                record: {
+                    id: CALLDOG_CONFIG.AUDIO_RECORD_ID // Используем готовый аудиоролик
+                }
+            })
+        });
 
         return response.ok;
 

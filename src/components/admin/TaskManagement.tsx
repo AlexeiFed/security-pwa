@@ -49,16 +49,16 @@ import {
     Person as PersonIcon,
     LocationOn as LocationIcon,
     AccessTime as TimeIcon,
+    Delete as DeleteIcon,
 
 } from '@mui/icons-material';
 import { Task, Inspector, ObjectData, ObjectStatus } from '../../types';
-import { createTask, subscribeTasks } from '../../services/tasks';
+import { createTask, subscribeTasks, deleteTask } from '../../services/tasks';
 import { getInspectors } from '../../services/auth';
 import { getObjects, getActiveObjects } from '../../services/objects';
 import SimpleYandexMap from '../maps/SimpleYandexMap';
 import { sendPushToUsers } from '../../services/pushNotifications';
 import { cacheManager } from '../../services/cache';
-import { colors } from '../../utils/colors';
 import { useLoadingState } from '../../hooks/useLoadingState';
 import LoadingIndicator from '../common/LoadingIndicator';
 import { useTheme } from '@mui/material/styles';
@@ -104,6 +104,8 @@ const TaskManagement = React.memo(() => {
     const [tabValue, setTabValue] = useState(0);
     const [addDialogOpen, setAddDialogOpen] = useState(false);
     const [objectsDialogOpen, setObjectsDialogOpen] = useState(false);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
     const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
         open: false,
         message: '',
@@ -340,6 +342,33 @@ const TaskManagement = React.memo(() => {
         setSearchQuery(''); // Сбрасываем поиск при открытии
     };
 
+    const handleDeleteTask = (task: Task) => {
+        setTaskToDelete(task);
+        setDeleteDialogOpen(true);
+    };
+
+    const confirmDeleteTask = async () => {
+        if (!taskToDelete) return;
+
+        try {
+            startLoading();
+            await deleteTask(taskToDelete.id);
+            showSnackbar('Задание успешно удалено', 'success');
+            setDeleteDialogOpen(false);
+            setTaskToDelete(null);
+        } catch (error) {
+            console.error('Ошибка при удалении задания:', error);
+            showSnackbar('Ошибка при удалении задания', 'error');
+        } finally {
+            stopLoading();
+        }
+    };
+
+    const cancelDeleteTask = () => {
+        setDeleteDialogOpen(false);
+        setTaskToDelete(null);
+    };
+
     const getTaskStatusIcon = useCallback((status: string) => {
         // Убираем иконки для мобильной версии
         if (isMobile) {
@@ -388,31 +417,6 @@ const TaskManagement = React.memo(() => {
         }
     }, []);
 
-    const getObjectStatusColor = useCallback((status: ObjectStatus) => {
-        switch (status) {
-            case 'active':
-                return 'success';
-            case 'inactive':
-                return 'error';
-            case 'maintenance':
-                return 'warning';
-            default:
-                return 'default';
-        }
-    }, []);
-
-    const getObjectStatusText = useCallback((status: ObjectStatus) => {
-        switch (status) {
-            case 'active':
-                return 'Активен';
-            case 'inactive':
-                return 'Неактивен';
-            case 'maintenance':
-                return 'На обслуживании';
-            default:
-                return 'Неизвестно';
-        }
-    }, []);
 
     const showSnackbar = useCallback((message: string, severity: 'success' | 'error') => {
         setSnackbar({ open: true, message, severity });
@@ -583,6 +587,20 @@ const TaskManagement = React.memo(() => {
                                                                     }
                                                                 }}
                                                             />
+                                                            <IconButton
+                                                                onClick={() => handleDeleteTask(task)}
+                                                                size="small"
+                                                                sx={{
+                                                                    color: '#ff6b6b',
+                                                                    '&:hover': {
+                                                                        backgroundColor: 'rgba(255, 107, 107, 0.1)',
+                                                                        color: '#ff5252'
+                                                                    }
+                                                                }}
+                                                                title="Удалить задание"
+                                                            >
+                                                                <DeleteIcon fontSize="small" />
+                                                            </IconButton>
                                                         </Box>
                                                     }
                                                     secondary={
@@ -831,6 +849,20 @@ const TaskManagement = React.memo(() => {
                                                                     }
                                                                 }}
                                                             />
+                                                            <IconButton
+                                                                onClick={() => handleDeleteTask(task)}
+                                                                size="small"
+                                                                sx={{
+                                                                    color: '#ff6b6b',
+                                                                    '&:hover': {
+                                                                        backgroundColor: 'rgba(255, 107, 107, 0.1)',
+                                                                        color: '#ff5252'
+                                                                    }
+                                                                }}
+                                                                title="Удалить задание"
+                                                            >
+                                                                <DeleteIcon fontSize="small" />
+                                                            </IconButton>
                                                         </Box>
                                                     }
                                                     secondary={
@@ -1500,6 +1532,64 @@ const TaskManagement = React.memo(() => {
                             Пожалуйста, подождите. Не закрывайте окно до завершения операции.
                         </Typography>
                     </DialogContent>
+                </Dialog>
+
+                {/* Диалог подтверждения удаления */}
+                <Dialog open={deleteDialogOpen} onClose={cancelDeleteTask} maxWidth="sm" fullWidth>
+                    <DialogTitle sx={{ color: '#ffffff', backgroundColor: '#1a1a1a' }}>
+                        Подтверждение удаления
+                    </DialogTitle>
+                    <DialogContent sx={{ backgroundColor: '#1a1a1a', color: '#ffffff' }}>
+                        <Typography variant="body1" sx={{ mb: 2 }}>
+                            Вы уверены, что хотите удалить задание?
+                        </Typography>
+                        {taskToDelete && (
+                            <Box sx={{
+                                p: 2,
+                                border: '1px solid rgba(255, 255, 255, 0.2)',
+                                borderRadius: 1,
+                                backgroundColor: 'rgba(255, 255, 255, 0.05)'
+                            }}>
+                                <Typography variant="h6" sx={{ color: '#ffffff', mb: 1 }}>
+                                    {taskToDelete.title}
+                                </Typography>
+                                <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.8)', mb: 1 }}>
+                                    {taskToDelete.description}
+                                </Typography>
+                                <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+                                    Назначено: {taskToDelete.assignedToName}
+                                </Typography>
+                            </Box>
+                        )}
+                        <Typography variant="body2" sx={{ mt: 2, color: '#ff6b6b' }}>
+                            ⚠️ Это действие нельзя отменить!
+                        </Typography>
+                    </DialogContent>
+                    <DialogActions sx={{ backgroundColor: '#1a1a1a', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                        <Button
+                            onClick={cancelDeleteTask}
+                            sx={{
+                                color: '#ffffff',
+                                '&:hover': {
+                                    backgroundColor: 'rgba(255, 255, 255, 0.1)'
+                                }
+                            }}
+                        >
+                            Отмена
+                        </Button>
+                        <Button
+                            onClick={confirmDeleteTask}
+                            variant="contained"
+                            sx={{
+                                backgroundColor: '#ff6b6b',
+                                '&:hover': {
+                                    backgroundColor: '#ff5252'
+                                }
+                            }}
+                        >
+                            Удалить
+                        </Button>
+                    </DialogActions>
                 </Dialog>
             </Box>
         </Box>

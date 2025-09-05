@@ -7,7 +7,9 @@ import {
     CardContent,
     IconButton,
     Container,
-    CircularProgress
+    CircularProgress,
+    useTheme,
+    useMediaQuery
 } from '@mui/material';
 import {
     People as PeopleIcon,
@@ -15,20 +17,26 @@ import {
     Security as SecurityIcon,
     Assignment as AssignmentIcon,
     Map as MapIcon,
-    ArrowBack as ArrowBackIcon
+    ArrowBack as ArrowBackIcon,
+    Shield as ShieldIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { colors, hexToRgba } from '../../utils/colors';
 import styles from './InspectorManagement.module.css';
 import { cacheManager } from '../../services/cache';
 import { useAuth } from '../../context/AuthContext';
+import AdminMobileHeader from '../common/AdminMobileHeader';
+
 
 const InspectorManagement = () => {
     const navigate = useNavigate();
     const { user } = useAuth();
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
     const [loading, setLoading] = useState(true);
     const [inspectorsCount, setInspectorsCount] = useState(0);
     const [curatorsCount, setCuratorsCount] = useState(0);
+    const [guardsCount, setGuardsCount] = useState(0);
     const [objectsCount, setObjectsCount] = useState(0);
     const [tasksCount, setTasksCount] = useState(0);
 
@@ -40,19 +48,22 @@ const InspectorManagement = () => {
                 console.log('🔄 Инициализация кэша данных для панели администратора...');
 
                 // Загружаем все данные параллельно
-                const [inspectors, curators, objects] = await Promise.all([
+                const [inspectors, curators, guards, objects] = await Promise.all([
                     cacheManager.getInspectors(),
                     cacheManager.getCurators(),
+                    cacheManager.getGuards(),
                     cacheManager.getObjects()
                 ]);
 
                 setInspectorsCount(inspectors.length);
                 setCuratorsCount(curators.length);
+                setGuardsCount(guards.length);
                 setObjectsCount(objects.length);
 
                 console.log('✅ Кэш данных инициализирован:', {
                     inspectors: inspectors.length,
                     curators: curators.length,
+                    guards: guards.length,
                     objects: objects.length
                 });
             } catch (error) {
@@ -64,6 +75,8 @@ const InspectorManagement = () => {
 
         if (user?.role === 'admin') {
             initializeCache();
+        } else {
+            setLoading(false);
         }
     }, [user]);
 
@@ -79,6 +92,12 @@ const InspectorManagement = () => {
             description: `Добавление, редактирование и удаление кураторов (${curatorsCount})`,
             icon: <SupervisorAccountIcon sx={{ fontSize: 48, color: '#ffffff' }} />,
             path: '/admin/curators',
+        },
+        {
+            title: 'Управление охранниками',
+            description: `Добавление, редактирование и удаление охранников (${guardsCount})`,
+            icon: <ShieldIcon sx={{ fontSize: 48, color: '#ffffff' }} />,
+            path: '/admin/guards',
         },
         {
             title: 'Управление объектами',
@@ -117,52 +136,12 @@ const InspectorManagement = () => {
                 position: 'relative',
             }}
         >
-            <Box sx={{ mt: 8 }}>
+            {/* Мобильная шапка */}
+            {isMobile && <AdminMobileHeader title="Управление инспекторами" />}
+
+            <Box sx={{ mt: isMobile ? 0 : 8 }}>
                 <Container maxWidth="lg" sx={{ position: 'relative', zIndex: 1 }}>
                     <Box sx={{ p: 3 }}>
-                        {/* Заголовок */}
-                        <Box sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            mb: 4,
-                            background: hexToRgba(colors.background.primary, 0.05),
-                            borderRadius: 2,
-                            p: 2,
-                            backdropFilter: 'blur(10px)',
-                            border: `1px solid ${colors.border.accent}`
-                        }}>
-                            <IconButton
-                                onClick={() => navigate('/')}
-                                sx={{
-                                    mr: 2,
-                                    color: colors.secondary.main,
-                                    backgroundColor: hexToRgba(colors.secondary.main, 0.1),
-                                    '&:hover': {
-                                        backgroundColor: hexToRgba(colors.secondary.main, 0.2),
-                                        transform: 'scale(1.1)'
-                                    },
-                                    transition: 'all 0.3s ease'
-                                }}
-                            >
-                                <ArrowBackIcon />
-                            </IconButton>
-                            <Typography
-                                variant="h3"
-                                component="h1"
-                                sx={{
-                                    color: colors.text.primary,
-                                    fontWeight: 700,
-                                    textShadow: `0 2px 4px ${hexToRgba(colors.primary.dark, 0.3)}`,
-                                    background: `linear-gradient(45deg, ${colors.text.primary}, ${colors.secondary.main})`,
-                                    backgroundClip: 'text',
-                                    WebkitBackgroundClip: 'text',
-                                    WebkitTextFillColor: 'transparent'
-                                }}
-                            >
-                                Панель администратора
-                            </Typography>
-                        </Box>
-
                         {/* Сетка меню */}
                         {loading ? (
                             <Box sx={{

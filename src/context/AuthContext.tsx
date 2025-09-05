@@ -73,6 +73,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
     const [preloadingData, setPreloadingData] = useState(false);
+    const [localAlarmActivated, setLocalAlarmActivated] = useState(false);
+    const [localAlarmData, setLocalAlarmData] = useState<{ objectName: string; description: string } | null>(null);
 
     // Функция для получения данных пользователя из Firestore
     const getUserData = async (firebaseUser: FirebaseUser): Promise<User | null> => {
@@ -175,6 +177,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
                             await cacheManager.getObjects();
                         } else if (userData.role === 'inspector') {
                             // Для инспекторов загружаем только объекты
+                            await cacheManager.getObjects();
+                        } else if (userData.role === 'guard') {
+                            // Для охранников загружаем только объекты
                             await cacheManager.getObjects();
                         }
 
@@ -353,7 +358,11 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         login,
         logout,
         updateUserCredentials,
-        getUserData: authService.getUserData
+        getUserData: authService.getUserData,
+        localAlarmActivated,
+        setLocalAlarmActivated,
+        localAlarmData,
+        setLocalAlarmData,
     };
 
     return (

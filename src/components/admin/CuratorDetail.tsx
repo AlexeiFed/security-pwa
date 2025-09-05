@@ -28,7 +28,9 @@ import {
     FormControlLabel,
     GlobalStyles,
     CircularProgress,
-    TextField
+    TextField,
+    useTheme,
+    useMediaQuery
 } from '@mui/material';
 import {
     ArrowBack as ArrowBackIcon,
@@ -49,11 +51,13 @@ import { Curator, ObjectData } from '../../types';
 import { getCurators, getCuratorCredentials, updateCuratorCredentials } from '../../services/auth';
 import { getObjects } from '../../services/objects';
 import YandexMap from '../maps/YandexMap';
-import Header from '../common/Header';
+import AdminMobileHeader from '../common/AdminMobileHeader';
 import { colors } from '../../utils/colors';
 
 const CuratorDetail = () => {
     const navigate = useNavigate();
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
     const { curatorId } = useParams<{ curatorId: string }>();
     const [curator, setCurator] = useState<Curator | null>(null);
     const [objects, setObjects] = useState<ObjectData[]>([]);
@@ -304,10 +308,20 @@ const CuratorDetail = () => {
     }
 
     return (
-        <Box sx={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0A2463 0%, #000 100%)' }}>
-            <Box sx={{ p: 3 }}>
+        <Box sx={{
+            minHeight: '100vh',
+            background: 'linear-gradient(135deg, #0A2463 0%, #000 100%)',
+            pb: isMobile ? 8 : 3 // Отступ снизу для мобильных устройств
+        }}>
+            {/* Убираем встроенную шапку - она теперь в App.tsx */}
+            <Box sx={{
+                p: 3,
+                pt: isMobile ? 8 : 16, // Отступ сверху для компенсации высоты шапки
+                pb: isMobile ? 1 : 3
+            }}>
+
                 {/* Заголовок страницы */}
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: isMobile ? 2 : 3 }}>
                     <IconButton
                         onClick={() => navigate('/admin/curators')}
                         sx={{
@@ -323,24 +337,53 @@ const CuratorDetail = () => {
                     >
                         <ArrowBackIcon />
                     </IconButton>
-                    <Typography variant="h4" component="h1" sx={{ color: colors.text.primary, fontWeight: 600 }}>
+                    <Typography
+                        variant={isMobile ? "h5" : "h4"}
+                        component="h1"
+                        sx={{
+                            color: colors.text.primary,
+                            fontWeight: 600,
+                            fontSize: isMobile ? '1.25rem' : undefined
+                        }}
+                    >
                         Профиль куратора
                     </Typography>
                 </Box>
 
                 {/* Информация о кураторе */}
-                <Box sx={{ mb: 3, p: 3, background: 'rgba(255,255,255,0.04)', borderRadius: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Box sx={{ mb: 3, p: isMobile ? 2 : 3, background: 'rgba(255,255,255,0.04)', borderRadius: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
                     <Box>
-                        <Typography variant="h5" component="h2" sx={{ color: '#fff', fontWeight: 700 }}>
+                        <Typography
+                            variant={isMobile ? "h6" : "h5"}
+                            component="h2"
+                            sx={{
+                                color: '#fff',
+                                fontWeight: 700,
+                                fontSize: isMobile ? '1.2rem' : undefined
+                            }}
+                        >
                             {curator.name}
                         </Typography>
                         {curator.phone && (
-                            <Typography variant="body1" sx={{ color: '#ccc', fontSize: 16 }}>
+                            <Typography
+                                variant="body1"
+                                sx={{
+                                    color: '#ccc',
+                                    fontSize: isMobile ? '0.9rem' : 16
+                                }}
+                            >
                                 {curator.phone}
                             </Typography>
                         )}
                         {curator.createdAt && (
-                            <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: 14, mt: 0.5 }}>
+                            <Typography
+                                variant="body2"
+                                sx={{
+                                    color: 'rgba(255, 255, 255, 0.6)',
+                                    fontSize: isMobile ? '0.75rem' : 14,
+                                    mt: 0.5
+                                }}
+                            >
                                 Профиль создан: {curator.createdAt.toLocaleDateString('ru-RU')}
                             </Typography>
                         )}
@@ -348,7 +391,11 @@ const CuratorDetail = () => {
                     <Chip
                         label={getStatusText(curator.status)}
                         color={getStatusColor(curator.status) as any}
-                        sx={{ ml: 'auto' }}
+                        size={isMobile ? "small" : "medium"}
+                        sx={{
+                            ml: 'auto',
+                            fontSize: isMobile ? '0.7rem' : undefined
+                        }}
                     />
                 </Box>
 
@@ -514,48 +561,106 @@ const CuratorDetail = () => {
                                     </Box>
                                 </>
                             )}
-                            <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-                                <Button
-                                    variant="contained"
-                                    startIcon={<WhatsAppIcon />}
-                                    onClick={handleSendViaWhatsApp}
-                                    disabled={!curatorCredentials.email || curatorCredentials.password === '••••••••'}
-                                    sx={{
-                                        backgroundColor: '#25D366',
-                                        '&:hover': { backgroundColor: '#128C7E' },
-                                        '&:disabled': {
-                                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                                            color: 'rgba(255, 255, 255, 0.3)'
-                                        }
-                                    }}
-                                >
-                                    Отправить в WhatsApp
-                                </Button>
-                                <Button
-                                    variant="contained"
-                                    startIcon={<TelegramIcon />}
-                                    onClick={handleSendViaTelegram}
-                                    disabled={!curatorCredentials.email || curatorCredentials.password === '••••••••'}
-                                    sx={{
-                                        backgroundColor: '#0088cc',
-                                        '&:hover': { backgroundColor: '#006699' },
-                                        '&:disabled': {
-                                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                                            color: 'rgba(255, 255, 255, 0.3)'
-                                        }
-                                    }}
-                                >
-                                    Отправить в Telegram
-                                </Button>
+                            <Box sx={{ display: 'flex', gap: isMobile ? 1 : 2, mt: 1 }}>
+                                {isMobile ? (
+                                    <>
+                                        <IconButton
+                                            onClick={handleSendViaWhatsApp}
+                                            disabled={!curatorCredentials.email || curatorCredentials.password === '••••••••'}
+                                            sx={{
+                                                backgroundColor: '#25D366',
+                                                color: '#ffffff',
+                                                '&:hover': { backgroundColor: '#128C7E' },
+                                                '&:disabled': {
+                                                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                                    color: 'rgba(255, 255, 255, 0.3)'
+                                                }
+                                            }}
+                                        >
+                                            <WhatsAppIcon />
+                                        </IconButton>
+                                        <IconButton
+                                            onClick={handleSendViaTelegram}
+                                            disabled={!curatorCredentials.email || curatorCredentials.password === '••••••••'}
+                                            sx={{
+                                                backgroundColor: '#0088cc',
+                                                color: '#ffffff',
+                                                '&:hover': { backgroundColor: '#006699' },
+                                                '&:disabled': {
+                                                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                                    color: 'rgba(255, 255, 255, 0.3)'
+                                                }
+                                            }}
+                                        >
+                                            <TelegramIcon />
+                                        </IconButton>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Button
+                                            variant="contained"
+                                            startIcon={<WhatsAppIcon />}
+                                            onClick={handleSendViaWhatsApp}
+                                            disabled={!curatorCredentials.email || curatorCredentials.password === '••••••••'}
+                                            sx={{
+                                                backgroundColor: '#25D366',
+                                                '&:hover': { backgroundColor: '#128C7E' },
+                                                '&:disabled': {
+                                                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                                    color: 'rgba(255, 255, 255, 0.3)'
+                                                }
+                                            }}
+                                        >
+                                            Отправить в WhatsApp
+                                        </Button>
+                                        <Button
+                                            variant="contained"
+                                            startIcon={<TelegramIcon />}
+                                            onClick={handleSendViaTelegram}
+                                            disabled={!curatorCredentials.email || curatorCredentials.password === '••••••••'}
+                                            sx={{
+                                                backgroundColor: '#0088cc',
+                                                '&:hover': { backgroundColor: '#006699' },
+                                                '&:disabled': {
+                                                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                                    color: 'rgba(255, 255, 255, 0.3)'
+                                                }
+                                            }}
+                                        >
+                                            Отправить в Telegram
+                                        </Button>
+                                    </>
+                                )}
                             </Box>
                         </Box>
                     )}
                 </Box>
-                <Box sx={{ mt: 4, p: 3, display: 'flex', gap: 3, height: 'calc(100vh - 120px)' }}>
+                <Box sx={{
+                    mt: 4,
+                    p: isMobile ? 2 : 3,
+                    display: 'flex',
+                    gap: isMobile ? 2 : 3,
+                    height: isMobile ? 'auto' : 'calc(100vh - 120px)',
+                    flexDirection: isMobile ? 'column' : 'row'
+                }}>
                     {/* Левая панель - список объектов */}
-                    <Box sx={{ width: '40%', minWidth: 300, pr: 3, display: 'flex', flexDirection: 'column', height: '100%' }}>
+                    <Box sx={{
+                        width: isMobile ? '100%' : '40%',
+                        minWidth: isMobile ? 'auto' : 300,
+                        pr: isMobile ? 0 : 3,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        height: isMobile ? 'auto' : '100%'
+                    }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                            <Typography variant="h6" component="h2">
+                            <Typography
+                                variant={isMobile ? "body1" : "h6"}
+                                component="h2"
+                                sx={{
+                                    fontSize: isMobile ? '1.1rem' : undefined,
+                                    fontWeight: isMobile ? 600 : undefined
+                                }}
+                            >
                                 Объекты куратора ({curatorObjects.length})
                             </Typography>
                             <Button
@@ -587,8 +692,25 @@ const CuratorDetail = () => {
                                     >
                                         <SecurityIcon color={hoveredObjectId === obj.id ? 'error' : 'primary'} sx={{ fontSize: hoveredObjectId === obj.id ? 28 : 24, transition: 'all 0.2s' }} />
                                         <Box sx={{ flex: 1 }}>
-                                            <Typography variant="body1" sx={{ color: '#fff', fontWeight: 500 }}>{obj.name}</Typography>
-                                            <Typography variant="body2" sx={{ color: '#ccc' }}>{obj.address}</Typography>
+                                            <Typography
+                                                variant="body1"
+                                                sx={{
+                                                    color: '#fff',
+                                                    fontWeight: 500,
+                                                    fontSize: isMobile ? '0.9rem' : undefined
+                                                }}
+                                            >
+                                                {obj.name}
+                                            </Typography>
+                                            <Typography
+                                                variant="body2"
+                                                sx={{
+                                                    color: '#ccc',
+                                                    fontSize: isMobile ? '0.75rem' : undefined
+                                                }}
+                                            >
+                                                {obj.address}
+                                            </Typography>
                                         </Box>
                                         <DeleteIcon sx={{ color: '#ff4444', cursor: 'pointer' }} onClick={e => { e.stopPropagation(); setObjectToDelete(obj.id); setDeleteDialogOpen(true); }} />
                                     </Box>
@@ -598,22 +720,24 @@ const CuratorDetail = () => {
                             )}
                         </Box>
                     </Box>
-                    {/* Правая панель - карта */}
-                    <Box sx={{ flex: 1, minHeight: 400, height: '100%' }}>
-                        <YandexMap
-                            center={[48.4827, 135.0840]}
-                            markers={curatorObjects.filter(obj => Array.isArray(obj.position) && obj.position.length === 2 && obj.position.every(n => typeof n === 'number')).map(obj => ({
-                                id: obj.id,
-                                title: obj.name,
-                                position: obj.position,
-                                status: 'checked',
-                                isSelected: false
-                            }))}
-                            hoveredObjectId={hoveredObjectId}
-                            onMarkerClick={() => { }}
-                            height="100%"
-                        />
-                    </Box>
+                    {/* Правая панель - карта (только для десктопа) */}
+                    {!isMobile && (
+                        <Box sx={{ flex: 1, minHeight: 400, height: '100%' }}>
+                            <YandexMap
+                                center={[48.4827, 135.0840]}
+                                markers={curatorObjects.filter(obj => Array.isArray(obj.position) && obj.position.length === 2 && obj.position.every(n => typeof n === 'number')).map(obj => ({
+                                    id: obj.id,
+                                    title: obj.name,
+                                    position: obj.position,
+                                    status: 'checked',
+                                    isSelected: false
+                                }))}
+                                hoveredObjectId={hoveredObjectId}
+                                onMarkerClick={() => { }}
+                                height="100%"
+                            />
+                        </Box>
+                    )}
                 </Box>
                 {/* Диалог выбора объектов */}
                 <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="sm" fullWidth>

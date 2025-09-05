@@ -5,7 +5,7 @@
  * @created: 2025-06-27
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
     Box,
     Typography,
@@ -15,11 +15,12 @@ import {
 
     Card,
     CardContent,
-    CardActions,
+
     Dialog,
     DialogTitle,
     DialogContent,
     DialogActions,
+    Fab,
     Autocomplete,
     Chip,
     IconButton,
@@ -37,14 +38,16 @@ import {
     Edit as EditIcon,
     Delete as DeleteIcon,
     Search as SearchIcon,
-    Circle as CircleIcon
+    Circle as CircleIcon,
+    ArrowBack as ArrowBackIcon
 } from '@mui/icons-material';
 import { colors } from '../../utils/colors';
-import { getObjects, createObject, updateObject, deleteObject } from '../../services/objects';
+import { createObject, updateObject, deleteObject } from '../../services/objects';
 import { ObjectData, ObjectStatus } from '../../types';
 import { cacheManager } from '../../services/cache';
-import { useNavigate } from 'react-router-dom';
-import { ArrowBack as ArrowBackIcon, ExpandMore as ExpandMoreIcon, ExpandLess as ExpandLessIcon } from '@mui/icons-material';
+
+import { ExpandMore as ExpandMoreIcon, ExpandLess as ExpandLessIcon } from '@mui/icons-material';
+import { useTheme, useMediaQuery } from '@mui/material';
 
 // Типы для Яндекс.Карт
 declare global {
@@ -152,11 +155,15 @@ const SimpleYandexMap: React.FC<{
                             const isHovered = hoveredObjectId && marker.id === hoveredObjectId;
                             const placemark = new window.ymaps.Placemark(
                                 marker.position,
-                                { balloonContent: marker.title },
                                 {
-                                    preset: isHovered ? 'islands#redIcon' : 'islands#blueDotIcon',
+                                    balloonContent: marker.title,
+                                    iconCaption: marker.title
+                                },
+                                {
+                                    preset: isHovered ? 'islands#redIcon' : 'islands#blueIcon',
                                     iconColor: isHovered ? '#d32f2f' : undefined,
                                     iconImageSize: isHovered ? [40, 40] : [24, 24],
+                                    iconCaptionMaxWidth: 220,
                                     suppressMapOpenBlock: true
                                 }
                             );
@@ -223,7 +230,7 @@ const SimpleYandexMap: React.FC<{
                 isInitialized.current = false;
             }
         };
-    }, []); // Убираем зависимости, чтобы карта не перерендеривалась
+    }, []);
 
     // Отдельный эффект для обновления маркеров без перерендера карты
     useEffect(() => {
@@ -239,11 +246,15 @@ const SimpleYandexMap: React.FC<{
                 const isHovered = hoveredObjectId && marker.id === hoveredObjectId;
                 const placemark = new window.ymaps.Placemark(
                     marker.position,
-                    { balloonContent: marker.title },
                     {
-                        preset: isHovered ? 'islands#redIcon' : 'islands#blueDotIcon',
+                        balloonContent: marker.title,
+                        iconCaption: marker.title
+                    },
+                    {
+                        preset: isHovered ? 'islands#redIcon' : 'islands#blueIcon',
                         iconColor: isHovered ? '#d32f2f' : undefined,
                         iconImageSize: isHovered ? [40, 40] : [24, 24],
+                        iconCaptionMaxWidth: 220,
                         suppressMapOpenBlock: true
                     }
                 );
@@ -286,17 +297,18 @@ const SimpleYandexMap: React.FC<{
                 border: '1px solid #1976d2',
                 borderRadius: '8px',
                 backgroundColor: '#f0f0f0',
-                minHeight: 400
+                minHeight: '100%'
             }}
         />
     );
 };
 
-// Сервис для геокодирования адресов
+// Сервис для геокодирования адресов (приоритет точного дома при наличии номера)
 const geocodeAddress = async (address: string): Promise<{ position: [number, number]; formattedAddress: string } | null> => {
     if (!window.ymaps) return null;
 
     return new Promise((resolve) => {
+        const hasDigitsInOriginal = /\d+/.test(address);
         // Подготавливаем варианты поиска
         const searchVariants = [
             address,
@@ -304,50 +316,61 @@ const geocodeAddress = async (address: string): Promise<{ position: [number, num
             address.includes('Хабаровск') ? address : `Хабаровск, ${address}`,
             address.includes('улица') ? address : `улица ${address}, Хабаровск`,
             address.includes('проспект') ? address : `проспект ${address}, Хабаровск`,
-            address.includes('бульвар') ? address : `бульвар ${address}, Хабаровск`
+            address.includes('бульвар') ? address : `бульвар ${address}, Хабаровск`,
+            address.includes('переулок') ? address : `переулок ${address}, Хабаровск`,
+            address.includes('набережная') ? address : `набережная ${address}, Хабаровск`,
+            address.includes('шоссе') ? address : `шоссе ${address}, Хабаровск`,
+            `${address}, Хабаровский край`,
+            `Хабаровский край, ${address}`
         ];
 
-        // Функция для попытки геокодирования
         const tryGeocode = (searchQuery: string, attempt: number = 0): Promise<any> => {
-            return window.ymaps.geocode(searchQuery, {
-                results: 3,
-                kind: 'locality,street,house'
-            }).then((res: any) => {
-                const geoObject = res.geoObjects.get(0);
-                if (geoObject) {
-                    const coords = geoObject.geometry.getCoordinates();
-                    const formattedAddress = geoObject.getAddressLine();
+            const hasDigits = /\d+/.test(searchQuery) || hasDigitsInOriginal;
+            const options: any = { results: 10 };
+            if (hasDigits) options.kind = 'house'; else options.kind = 'street';
 
-                    // Проверяем, что это действительно адрес в Хабаровске
-                    if (formattedAddress.toLowerCase().includes('хабаровск') ||
-                        formattedAddress.toLowerCase().includes('хабаровский')) {
-                        console.log('Найден адрес:', formattedAddress, 'координаты:', coords);
-                        return {
-                            position: [coords[0], coords[1]],
-                            formattedAddress
-                        };
+            return window.ymaps
+                .geocode(searchQuery, options)
+                .then((res: any) => {
+                    let bestHouse: any = null;
+                    let bestStreet: any = null;
+
+                    for (let i = 0; i < res.geoObjects.getLength(); i++) {
+                        const geoObject = res.geoObjects.get(i);
+                        const formattedAddress = geoObject.getAddressLine();
+                        const meta = geoObject?.properties?.get('metaDataProperty');
+                        const kind = meta?.GeocoderMetaData?.kind;
+
+                        const isKhabarovsk =
+                            formattedAddress?.toLowerCase().includes('хабаровск') ||
+                            formattedAddress?.toLowerCase().includes('хабаровский');
+                        if (!isKhabarovsk) continue;
+
+                        if (kind === 'house' && !bestHouse) bestHouse = geoObject;
+                        if (kind === 'street' && !bestStreet) bestStreet = geoObject;
                     }
-                }
 
-                // Если это не последняя попытка, пробуем следующий вариант
-                if (attempt < searchVariants.length - 1) {
-                    return tryGeocode(searchVariants[attempt + 1], attempt + 1);
-                }
+                    const pick = hasDigits ? (bestHouse || bestStreet) : (bestStreet || bestHouse);
+                    if (pick) {
+                        const coords = pick.geometry.getCoordinates();
+                        const formattedAddress = pick.getAddressLine();
+                        return { position: [coords[0], coords[1]], formattedAddress };
+                    }
 
-                return null;
-            }).catch(() => {
-                // Если ошибка и это не последняя попытка, пробуем следующий вариант
-                if (attempt < searchVariants.length - 1) {
-                    return tryGeocode(searchVariants[attempt + 1], attempt + 1);
-                }
-                return null;
-            });
+                    if (attempt < searchVariants.length - 1) {
+                        return tryGeocode(searchVariants[attempt + 1], attempt + 1);
+                    }
+                    return null;
+                })
+                .catch(() => {
+                    if (attempt < searchVariants.length - 1) {
+                        return tryGeocode(searchVariants[attempt + 1], attempt + 1);
+                    }
+                    return null;
+                });
         };
 
-        // Начинаем поиск с первого варианта
-        tryGeocode(searchVariants[0], 0).then((result) => {
-            resolve(result);
-        });
+        tryGeocode(searchVariants[0], 0).then((result) => resolve(result));
     });
 };
 
@@ -371,76 +394,110 @@ const reverseGeocode = async (position: [number, number]): Promise<string | null
     });
 };
 
-// Сервис для поиска улиц Хабаровска
+// Сервис для поиска улиц/домов Хабаровска
 const searchHabarovskStreets = async (query: string): Promise<string[]> => {
     if (!window.ymaps || query.length < 2) return [];
 
-    return new Promise((resolve) => {
-        // Улучшенный поиск улиц Хабаровска
-        const searchQueries = [
-            `${query}, Хабаровск`,
-            `Хабаровск, ${query}`,
-            `улица ${query}, Хабаровск`,
-            `проспект ${query}, Хабаровск`,
-            `бульвар ${query}, Хабаровск`,
-            `переулок ${query}, Хабаровск`,
-            `${query}, Хабаровский край`,
-            `Хабаровский край, ${query}`
-        ];
+    const hasHouseNumber = /\d+/.test(query);
 
-        Promise.all(searchQueries.map(searchQuery =>
-            window.ymaps.geocode(searchQuery, {
-                results: 3,
-                // Убираем boundedBy для более широкого поиска
-                kind: 'locality,street' // Ищем только улицы и населенные пункты
-            }).catch(() => null)
-        )).then((results) => {
+    return new Promise((resolve) => {
+        const base = query.trim();
+        // Расширенный набор запросов. Если есть номер дома — даём приоритет house.
+        const searchQueries = [
+            `${base}, Хабаровск`,
+            `Хабаровск, ${base}`,
+            `улица ${base}, Хабаровск`,
+            `ул. ${base}, Хабаровск`,
+            `проспект ${base}, Хабаровск`,
+            `бульвар ${base}, Хабаровск`,
+            `переулок ${base}, Хабаровск`,
+            `набережная ${base}, Хабаровск`,
+            `шоссе ${base}, Хабаровск`,
+            // Без указания типа
+            `${base}`,
+            `Хабаровск ${base}`,
+            // Для случаев, когда сначала номер
+            hasHouseNumber ? `дом ${base}, Хабаровск` : null,
+            hasHouseNumber ? `${base} дом, Хабаровск` : null,
+            // Паттерны вида: Руднева 74, ул Руднева 74
+            hasHouseNumber ? `${base.replace(/\s*(\d+)/, ', $1')}, Хабаровск` : null
+        ].filter(Boolean);
+
+        const geocodeOptions = (isHouse: boolean) => ({
+            results: isHouse ? 15 : 10,
+            // Яндекс принимает одно значение kind, поэтому выбираем точечный тип
+            kind: isHouse ? 'house' : 'street'
+        });
+
+        Promise.all(
+            searchQueries.map((searchQuery) =>
+                window.ymaps
+                    .geocode(searchQuery, geocodeOptions(hasHouseNumber))
+                    .catch(() => null)
+            )
+        ).then((results) => {
             const suggestions: string[] = [];
             const seen = new Set<string>();
 
-            results.forEach(res => {
-                if (res) {
-                    res.geoObjects.each((geoObject: any) => {
-                        const address = geoObject.getAddressLine();
+            const pushIfValid = (address: string, preferHouse: boolean, geoObject: any) => {
+                if (!address || seen.has(address)) return;
 
-                        // Фильтруем только адреса Хабаровска
-                        if (address &&
-                            !seen.has(address) &&
-                            (address.toLowerCase().includes('хабаровск') ||
-                                address.toLowerCase().includes('хабаровский') ||
-                                address.includes('Хабаровск') ||
-                                address.includes('Хабаровский'))) {
+                const lower = address.toLowerCase();
+                const isKhabarovsk =
+                    lower.includes('хабаровск') || lower.includes('хабаровский') ||
+                    address.includes('Хабаровск') || address.includes('Хабаровский');
+                if (!isKhabarovsk) return;
 
-                            seen.add(address);
-                            suggestions.push(address);
-                        }
-                    });
+                // Если пользователь вводит номер дома, стараемся показывать только дома
+                if (preferHouse) {
+                    try {
+                        const meta = geoObject?.properties?.get('metaDataProperty');
+                        const kind = meta?.GeocoderMetaData?.kind;
+                        if (kind !== 'house' && !/\d+/.test(address)) return;
+                    } catch (_) {
+                        if (!/\d+/.test(address)) return;
+                    }
                 }
+
+                seen.add(address);
+                suggestions.push(address);
+            };
+
+            results.forEach((res) => {
+                if (!res) return;
+                res.geoObjects.each((geoObject: any) => {
+                    const address = geoObject.getAddressLine();
+                    pushIfValid(address, hasHouseNumber, geoObject);
+                });
             });
 
-            // Если ничего не найдено, попробуем более простой поиск
+            // Если ничего не найдено, делаем более широкий запрос без жесткого kind
             if (suggestions.length === 0) {
-                window.ymaps.geocode(`${query}`, {
-                    results: 10,
-                    kind: 'locality,street'
-                }).then((res: any) => {
-                    const fallbackSuggestions: string[] = [];
-                    res.geoObjects.each((geoObject: any) => {
-                        const address = geoObject.getAddressLine();
-                        if (address &&
-                            !seen.has(address) &&
-                            (address.toLowerCase().includes('хабаровск') ||
-                                address.toLowerCase().includes('хабаровский'))) {
-                            seen.add(address);
-                            fallbackSuggestions.push(address);
+                window.ymaps
+                    .geocode(`${base}`, { results: 20 })
+                    .then((res: any) => {
+                        res.geoObjects.each((geoObject: any) => {
+                            const address = geoObject.getAddressLine();
+                            pushIfValid(address, hasHouseNumber, geoObject);
+                        });
+                        // Если пользователь явно ввёл номер, добавим явную подсказку сверху
+                        if (hasHouseNumber) {
+                            const manual = /хабаровск/i.test(base) ? base : `Хабаровск, ${base}`;
+                            if (!suggestions.includes(manual)) suggestions.unshift(manual);
                         }
-                    });
-                    resolve([...suggestions, ...fallbackSuggestions].slice(0, 10));
-                }).catch(() => {
-                    resolve(suggestions);
-                });
+                        resolve(suggestions.slice(0, 20));
+                    })
+                    .catch(() => resolve([]));
             } else {
-                resolve(suggestions.slice(0, 10));
+                // В house-режиме сортируем адреса: сначала те, где есть номер
+                const sorted = hasHouseNumber
+                    ? suggestions.sort((a, b) => {
+                        const aHas = /\d+/.test(a) ? 1 : 0;
+                        const bHas = /\d+/.test(b) ? 1 : 0;
+                        return bHas - aHas;
+                    })
+                    : suggestions;
+                resolve(sorted.slice(0, 20));
             }
         });
     });
@@ -464,13 +521,24 @@ const ObjectManagement = () => {
     });
     const [mapInstance, setMapInstance] = useState<any>(null);
 
+    // Популярные улицы Хабаровска
+    const popularStreets = [
+        'ул. Ленина, Хабаровск',
+        'Амурский бульвар, Хабаровск',
+        'ул. Карла Маркса, Хабаровск',
+        'ул. Муравьева-Амурского, Хабаровск',
+        'ул. Серышева, Хабаровск',
+        'ул. Пушкина, Хабаровск'
+    ];
+
     const [statusFilter, setStatusFilter] = useState<ObjectStatus | 'all'>('all');
     const [addingObject, setAddingObject] = useState(false);
     const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const [hoveredObjectId, setHoveredObjectId] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const [expandedDescriptions, setExpandedDescriptions] = useState<Set<string>>(new Set());
-    const navigate = useNavigate();
+    const [expandedObjects, setExpandedObjects] = useState<Set<string>>(new Set());
+    const [loadingDialogOpen, setLoadingDialogOpen] = useState(false);
 
     // Форма добавления объекта
     const [newObject, setNewObject] = useState({
@@ -497,7 +565,7 @@ const ObjectManagement = () => {
     }, [editDialogOpen, objectToEdit]);
 
     // Загрузка объектов из Firebase с кэшированием
-    const loadObjects = async () => {
+    const loadObjects = useCallback(async () => {
         try {
             setLoading(true);
             setError(null);
@@ -513,12 +581,12 @@ const ObjectManagement = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
     // Загрузка объектов при монтировании компонента
     useEffect(() => {
         loadObjects();
-    }, []);
+    }, [loadObjects]);
 
     // Фильтрация объектов по поиску и статусу
     const filtered = objects.filter(obj => {
@@ -556,66 +624,31 @@ const ObjectManagement = () => {
         });
     });
 
-    // Функция для центрирования карты по адресу (без обновления поля поиска)
-    const centerMapOnAddress = async (address: string, updateField: boolean = false) => {
-        if (!mapInstance || !address.trim()) return;
-
-        try {
-            const geocodeResult = await geocodeAddress(address);
-            if (geocodeResult) {
-                // Центрируем карту на найденном адресе с подходящим зумом
-                mapInstance.setCenter(geocodeResult.position, 16);
-
-                // Показываем маркер выбранного адреса
-                setSelectedPosition(geocodeResult.position);
-
-                // Обновляем поле поиска только если это требуется
-                if (updateField) {
-                    setStreetSearch(geocodeResult.formattedAddress);
-                }
-            }
-        } catch (error) {
-            console.error('Ошибка центрирования карты:', error);
-        }
-    };
+    // Функция центрирования карты удалена: логика перенесена в handleStreetSelect
 
     // Debounced функция для поиска улиц (без центрирования карты)
     const debouncedStreetSearch = async (value: string) => {
         if (value.length >= 3) {
             const suggestions = await searchHabarovskStreets(value);
-            setStreetSuggestions(suggestions);
+
+            const enhanced: string[] = [...suggestions];
+            const hasDigits = /\d+/.test(value);
+            if (hasDigits) {
+                const withCity = /хабаровск/i.test(value) ? value : `Хабаровск, ${value}`;
+                const withCommaBeforeNumber = withCity.replace(/\s*(\d)/, ', $1');
+                if (!enhanced.includes(withCity)) enhanced.unshift(withCity);
+                if (!enhanced.includes(withCommaBeforeNumber)) enhanced.unshift(withCommaBeforeNumber);
+            }
+
+            setStreetSuggestions(enhanced.slice(0, 20));
             // Убираем автоматическое центрирование карты при вводе
         } else {
             setStreetSuggestions([]);
         }
     };
 
-    // Поиск улиц Хабаровска с debounce
-    const handleStreetSearch = async (value: string) => {
-        setStreetSearch(value);
-
-
-        // Очищаем предыдущий таймаут
-        if (searchTimeoutRef.current) {
-            clearTimeout(searchTimeoutRef.current);
-        }
-
-        // Устанавливаем новый таймаут для debounce
-        searchTimeoutRef.current = setTimeout(() => {
-            debouncedStreetSearch(value);
-        }, 500); // 500ms задержка
-    };
-
-    // Обработчик нажатия Enter в поле поиска
-    const handleStreetSearchKeyPress = async (event: React.KeyboardEvent) => {
-        if (event.key === 'Enter' && streetSearch.trim()) {
-            event.preventDefault();
-            setStreetSuggestions([]);
-
-            // Центрируем карту по введенному адресу
-            await centerMapOnAddress(streetSearch, true);
-        }
-    };
+    // Удалённые устаревшие обработчики поиска с debounce и Enter,
+    // используется прямой вызов debouncedStreetSearch в onInputChange
 
     // Выбор улицы из поиска
     const handleStreetSelect = async (address: string) => {
@@ -623,19 +656,24 @@ const ObjectManagement = () => {
         setStreetSuggestions([]);
 
         try {
-            // Получаем координаты выбранного адреса
             const geocodeResult = await geocodeAddress(address);
             if (geocodeResult) {
-                // Центрируем карту на найденном адресе
+                const hasHouseNumber = /\d+/.test(geocodeResult.formattedAddress);
+                const zoomLevel = hasHouseNumber ? 18 : 16;
+
+                // Перемещаем карту и ОБНОВЛЯЕМ красную метку выбранной позиции
                 if (mapInstance) {
-                    mapInstance.setCenter(geocodeResult.position, 16);
-                    setSelectedPosition(geocodeResult.position);
+                    mapInstance.setCenter(geocodeResult.position, zoomLevel);
                 }
+                setSelectedPosition(geocodeResult.position);
 
                 // Обновляем поле поиска
                 setStreetSearch(geocodeResult.formattedAddress);
 
-                showSnackbar(`Карта центрирована на улице: ${geocodeResult.formattedAddress}`, 'success');
+                const message = hasHouseNumber
+                    ? `Карта центрирована на адресе: ${geocodeResult.formattedAddress}`
+                    : `Карта центрирована на улице: ${geocodeResult.formattedAddress}`;
+                showSnackbar(message, 'success');
             } else {
                 showSnackbar('Не удалось найти координаты для этого адреса', 'error');
             }
@@ -668,8 +706,9 @@ const ObjectManagement = () => {
     // Очистка таймаута при размонтировании
     useEffect(() => {
         return () => {
-            if (searchTimeoutRef.current) {
-                clearTimeout(searchTimeoutRef.current);
+            const timeoutId = searchTimeoutRef.current;
+            if (timeoutId) {
+                clearTimeout(timeoutId);
             }
         };
     }, []);
@@ -701,6 +740,7 @@ const ObjectManagement = () => {
 
         try {
             setAddingObject(true);
+            setLoadingDialogOpen(true); // Показываем модальное окно загрузки
 
             let position: [number, number];
             if (selectedPosition) {
@@ -709,6 +749,7 @@ const ObjectManagement = () => {
                 const geocodeResult = await geocodeAddress(newObject.address);
                 if (!geocodeResult) {
                     showSnackbar('Не удалось определить координаты адреса', 'error');
+                    setLoadingDialogOpen(false);
                     return;
                 }
                 position = geocodeResult.position;
@@ -747,10 +788,12 @@ const ObjectManagement = () => {
             setSelectedPosition(null);
             setStreetSearch('');
             setAddDialogOpen(false);
+            setLoadingDialogOpen(false); // Скрываем модальное окно загрузки
             showSnackbar('Объект успешно добавлен', 'success');
         } catch (err) {
             console.error('Ошибка добавления объекта:', err);
             showSnackbar('Ошибка при добавлении объекта', 'error');
+            setLoadingDialogOpen(false); // Скрываем модальное окно загрузки при ошибке
         } finally {
             setAddingObject(false);
         }
@@ -782,749 +825,958 @@ const ObjectManagement = () => {
         });
     };
 
+    const toggleObjectExpansion = (objectId: string) => {
+        setExpandedObjects(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(objectId)) {
+                newSet.delete(objectId);
+            } else {
+                newSet.add(objectId);
+            }
+            return newSet;
+        });
+    };
+
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
     return (
-        <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
-            {/* Заголовок страницы */}
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                <IconButton
-                    onClick={() => navigate('/')}
-                    sx={{
-                        mr: 2,
-                        color: colors.secondary.main,
-                        backgroundColor: 'rgba(212, 175, 55, 0.1)',
-                        '&:hover': {
-                            backgroundColor: 'rgba(212, 175, 55, 0.2)',
-                            transform: 'scale(1.1)'
-                        },
-                        transition: 'all 0.3s ease'
-                    }}
-                >
-                    <ArrowBackIcon />
-                </IconButton>
-                <Typography variant="h4" component="h1" sx={{ color: colors.text.primary, fontWeight: 600 }}>
-                    Управление объектами
-                </Typography>
-            </Box>
+        <Box sx={{
+            minHeight: '100vh',
+            background: 'linear-gradient(135deg, #0A2463 0%, #000 100%)',
+            pt: isMobile ? 10 : 0 // Добавляем отступ под шапку для мобильной версии
+        }}>
+            <Box sx={{ p: { xs: 1, sm: 2, md: 3 }, pt: { xs: 2, sm: 2 } }}>
 
-            {/* Компактная компоновка: левая панель и карта справа */}
-            <Box sx={{ display: 'flex', gap: 3, height: 'calc(100vh - 200px)' }}>
-                {/* Левая панель с поиском и фильтрами */}
-                <Box sx={{ width: '50%', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    {/* Поиск улиц Хабаровска */}
-                    <Paper sx={{ p: 2, flex: 1 }}>
-                        <Typography variant="h6" gutterBottom sx={{ color: colors.secondary.main, fontWeight: 600 }}>
-                            Поиск улиц Хабаровска
-                        </Typography>
-                        <Autocomplete
-                            freeSolo
-                            options={streetSuggestions}
-                            value={streetSearch}
-                            onChange={(_, value) => {
-                                if (value) {
-                                    handleStreetSelect(value);
-                                }
-                            }}
-                            onInputChange={(_, value) => handleStreetSearch(value)}
-                            onKeyPress={handleStreetSearchKeyPress}
-                            renderInput={(params) => (
-                                <TextField
-                                    {...params}
-                                    label="Введите улицу Хабаровска"
-                                    placeholder="Например: ул. Ленина"
-                                    fullWidth
-                                    size="small"
-                                    sx={{
-                                        '& .MuiInputLabel-root': {
-                                            color: 'text.secondary'
-                                        }
-                                    }}
-                                />
-                            )}
-                            renderOption={(props, option) => (
-                                <Box component="li" {...props}>
-                                    <LocationIcon sx={{ mr: 1, fontSize: 16 }} />
-                                    {option}
-                                </Box>
-                            )}
-                        />
-
-                        {/* Быстрые ссылки на популярные улицы */}
-                        <Box sx={{ mt: 2 }}>
-                            <Typography variant="body2" color="text.secondary" gutterBottom>
-                                Популярные улицы:
-                            </Typography>
-                            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                                {[
-                                    'ул. Ленина, Хабаровск',
-                                    'Амурский бульвар, Хабаровск',
-                                    'ул. Карла Маркса, Хабаровск',
-                                    'ул. Муравьева-Амурского, Хабаровск',
-                                    'ул. Серышева, Хабаровск',
-                                    'ул. Пушкина, Хабаровск'
-                                ].map((street) => (
-                                    <Chip
-                                        key={street}
-                                        label={street.split(',')[0]}
-                                        size="small"
-                                        variant="outlined"
-                                        onClick={() => handleStreetSelect(street)}
-                                        sx={{ cursor: 'pointer' }}
-                                    />
-                                ))}
-                            </Box>
-                        </Box>
-                    </Paper>
-
-                    {/* Фильтр по статусам */}
-                    <Paper sx={{ p: 2, flex: 1 }}>
-                        <Typography variant="h6" gutterBottom sx={{ color: colors.secondary.main, fontWeight: 600 }}>
-                            Фильтр по статусу
-                        </Typography>
-                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                            <Chip
-                                label="Все объекты"
-                                onClick={() => setStatusFilter('all')}
-                                color={statusFilter === 'all' ? 'primary' : 'default'}
-                                variant={statusFilter === 'all' ? 'filled' : 'outlined'}
-                                icon={<CircleIcon sx={{ fontSize: 16 }} />}
-                            />
-                            <Chip
-                                label="Активные"
-                                onClick={() => setStatusFilter('active')}
-                                color={statusFilter === 'active' ? 'primary' : 'default'}
-                                variant={statusFilter === 'active' ? 'filled' : 'outlined'}
-                                icon={<CircleIcon sx={{ fontSize: 16, color: colors.status.success }} />}
-                            />
-                            <Chip
-                                label="Неактивные"
-                                onClick={() => setStatusFilter('inactive')}
-                                color={statusFilter === 'inactive' ? 'primary' : 'default'}
-                                variant={statusFilter === 'inactive' ? 'filled' : 'outlined'}
-                                icon={<CircleIcon sx={{ fontSize: 16, color: colors.status.error }} />}
-                            />
-                            <Chip
-                                label="На обслуживании"
-                                onClick={() => setStatusFilter('maintenance')}
-                                color={statusFilter === 'maintenance' ? 'primary' : 'default'}
-                                variant={statusFilter === 'maintenance' ? 'filled' : 'outlined'}
-                                icon={<CircleIcon sx={{ fontSize: 16, color: colors.status.warning }} />}
-                            />
-                        </Box>
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                            Показано: {filtered.length} из {objects.length} объектов
-                        </Typography>
-                    </Paper>
-                </Box>
-
-                {/* Карта справа */}
-                <Paper sx={{ width: '50%', p: 2 }}>
-                    <SimpleYandexMap
-                        key={`map-${objects.length}-${filteredMarkers.length}`}
-                        center={DEFAULT_CENTER}
-                        zoom={12}
-                        markers={filteredMarkers}
-                        onMarkerClick={handleMarkerClick}
-                        onMapClick={handleMapClick}
-                        selectedPosition={selectedPosition}
-                        onMapReady={handleMapReady}
-                        hoveredObjectId={hoveredObjectId}
-                    />
-                </Paper>
-            </Box>
-
-            {/* Панель поиска и добавления */}
-            <Paper sx={{ mb: 3, p: 2, mt: 3 }}>
-                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <TextField
-                        label="Поиск по объектам"
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                        size="small"
-                        sx={{ flex: 1, minWidth: 200 }}
-                        InputProps={{
-                            startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} />
-                        }}
-                    />
-                    <Button
-                        variant="contained"
-                        startIcon={<AddIcon />}
-                        onClick={() => setAddDialogOpen(true)}
-                    >
-                        Добавить объект
-                    </Button>
-                </Box>
-            </Paper>
-
-            {/* Список объектов в виде карточек */}
-            {loading ? (
-                <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-                    <CircularProgress />
-                </Box>
-            ) : error ? (
-                <Alert severity="error" sx={{ mb: 2 }}>
-                    {error}
-                    <Button
-                        onClick={loadObjects}
-                        sx={{ ml: 2 }}
-                        size="small"
-                    >
-                        Повторить
-                    </Button>
-                </Alert>
-            ) : (
+                {/* Заголовок страницы */}
                 <Box sx={{
-                    display: 'grid',
-                    gap: 3,
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
-                    '@media (max-width: 600px)': {
-                        gridTemplateColumns: '1fr'
-                    }
+                    display: 'flex',
+                    alignItems: 'center',
+                    mb: 3,
+                    gap: 2
                 }}>
-                    {filtered.map(obj => (
-                        <Card
-                            key={obj.id}
+                    {!isMobile && (
+                        <IconButton
+                            onClick={() => window.history.back()}
                             sx={{
-                                height: '100%',
-                                cursor: 'pointer',
-                                transition: 'transform 0.2s, box-shadow 0.2s',
-                                transform: selectedId === obj.id ? 'scale(1.02)' : 'scale(1)',
-                                boxShadow: selectedId === obj.id ? 4 : 1,
+                                color: colors.secondary.main,
+                                backgroundColor: 'rgba(212, 175, 55, 0.1)',
                                 '&:hover': {
-                                    transform: 'scale(1.02)',
-                                    boxShadow: 4
-                                }
+                                    backgroundColor: 'rgba(212, 175, 55, 0.2)',
+                                    transform: 'scale(1.1)'
+                                },
+                                transition: 'all 0.3s ease'
                             }}
-                            onClick={() => setSelectedId(obj.id)}
-                            onMouseEnter={() => setHoveredObjectId(obj.id)}
-                            onMouseLeave={() => setHoveredObjectId(null)}
                         >
-                            <CardContent sx={{
-                                pb: 1,
-                                px: 3,
-                                py: 2.5,
-                                textAlign: 'left',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                height: '100%'
+                            <ArrowBackIcon />
+                        </IconButton>
+                    )}
+                    <Typography
+                        variant="h4"
+                        sx={{
+                            color: '#fff',
+                            fontWeight: 700,
+                            fontSize: isMobile ? '1.5rem' : '2rem'
+                        }}
+                    >
+                        Управление объектами
+                    </Typography>
+                </Box>
+
+                {/* Адаптивная компоновка для мобильных и десктопных устройств */}
+                <Box sx={{
+                    display: 'flex',
+                    flexDirection: isMobile ? 'column' : 'row',
+                    gap: 2,
+                    height: isMobile ? 'auto' : 'calc(100vh - 200px)'
+                }}>
+                    {/* Панель с поиском и фильтрами */}
+                    <Box sx={{
+                        width: isMobile ? '100%' : '50%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 2,
+                        mb: isMobile ? 2 : 0
+                    }}>
+                        {/* Поиск улиц Хабаровска */}
+                        <Paper sx={{ p: 2, flex: isMobile ? 'none' : 1 }}>
+                            <Typography variant="h6" gutterBottom sx={{
+                                color: colors.secondary.main,
+                                fontWeight: 600,
+                                fontSize: isMobile ? '1rem' : '1.25rem'
                             }}>
-                                <Box sx={{ flex: 1 }}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
-                                        <LocationIcon sx={{ mr: 1.5, color: colors.secondary.main, fontSize: 20 }} />
-                                        <Typography variant="subtitle1" component="h3" noWrap sx={{
-                                            fontSize: '0.95rem',
-                                            fontWeight: 600,
-                                            flex: 1
-                                        }}>
-                                            {obj.name}
-                                        </Typography>
-                                    </Box>
-                                    <Typography variant="body2" color="text.secondary" sx={{
-                                        mb: 1.5,
-                                        fontSize: '0.85rem',
-                                        lineHeight: 1.4
-                                    }}>
-                                        {obj.address}
-                                    </Typography>
-                                    <Box sx={{ mb: 1.5 }}>
-                                        <Typography variant="body2" sx={{
-                                            display: '-webkit-box',
-                                            WebkitLineClamp: expandedDescriptions.has(obj.id) ? 'unset' : 2,
-                                            WebkitBoxOrient: 'vertical',
-                                            overflow: 'hidden',
-                                            cursor: 'pointer',
-                                            fontSize: '0.8rem',
-                                            lineHeight: 1.5,
-                                            '&:hover': {
+                                Поиск улиц Хабаровска
+                            </Typography>
+                            <Autocomplete
+                                freeSolo
+                                options={streetSuggestions}
+                                value={streetSearch}
+                                onChange={(_, value) => {
+                                    if (value) {
+                                        handleStreetSelect(value);
+                                    }
+                                }}
+                                onInputChange={(_, value) => {
+                                    setStreetSearch(value);
+                                    debouncedStreetSearch(value);
+                                }}
+                                openOnFocus
+                                filterOptions={(x) => x}
+                                clearOnBlur={false}
+                                selectOnFocus
+                                renderInput={(params) => (
+                                    <TextField
+                                        {...params}
+                                        label="Введите улицу Хабаровска"
+                                        fullWidth
+                                        size="small"
+                                        sx={{
+                                            mb: 2,
+                                            '& .MuiInputLabel-root': {
                                                 color: colors.secondary.main
+                                            },
+                                            '& .MuiOutlinedInput-root': {
+                                                '& fieldset': {
+                                                    borderColor: colors.secondary.main
+                                                },
+                                                '&:hover fieldset': {
+                                                    borderColor: colors.secondary.main
+                                                },
+                                                '&.Mui-focused fieldset': {
+                                                    borderColor: colors.secondary.main,
+                                                    borderWidth: 2
+                                                }
                                             }
                                         }}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                toggleDescription(obj.id);
-                                            }}>
-                                            {obj.description}
-                                        </Typography>
-                                        {obj.description.length > 100 && (
-                                            <IconButton
+                                    />
+                                )}
+                            />
+                            {!isMobile && (
+                                <>
+                                    <Typography variant="body2" sx={{ mb: 1, color: 'text.secondary' }}>
+                                        Популярные улицы:
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                                        {popularStreets.map((street, index) => (
+                                            <Chip
+                                                key={index}
+                                                label={street}
                                                 size="small"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    toggleDescription(obj.id);
-                                                }}
+                                                onClick={() => handleStreetSelect(street)}
                                                 sx={{
-                                                    p: 0,
-                                                    mt: 0.5,
-                                                    color: colors.secondary.main,
+                                                    cursor: 'pointer',
                                                     '&:hover': {
-                                                        backgroundColor: 'rgba(212, 175, 55, 0.1)'
+                                                        backgroundColor: colors.secondary.main,
+                                                        color: '#000'
                                                     }
                                                 }}
-                                            >
-                                                {expandedDescriptions.has(obj.id) ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                                            </IconButton>
-                                        )}
+                                            />
+                                        ))}
                                     </Box>
-                                </Box>
+                                </>
+                            )}
+                        </Paper>
 
-                                {/* Строка с иконками и статусом внизу карточки */}
-                                <Box sx={{
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center',
-                                    mt: 'auto',
-                                    pt: 2,
-                                    borderTop: '1px solid rgba(0, 0, 0, 0.1)'
-                                }}>
-                                    <Box sx={{ display: 'flex', gap: 0.5 }}>
-                                        <IconButton
+                        {/* Фильтр по статусам */}
+                        <Paper sx={{ p: 2, flex: isMobile ? 'none' : 1 }}>
+                            <Typography variant="h6" gutterBottom sx={{
+                                color: colors.secondary.main,
+                                fontWeight: 600,
+                                fontSize: isMobile ? '1rem' : '1.25rem'
+                            }}>
+                                Фильтр по статусу
+                            </Typography>
+                            <FormControl component="fieldset" sx={{ width: '100%' }}>
+                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                    {[
+                                        { value: 'all', label: 'Все объекты' },
+                                        { value: 'active', label: 'Активные' },
+                                        { value: 'inactive', label: 'Неактивные' },
+                                        { value: 'maintenance', label: 'На обслуживании' }
+                                    ].map((option) => (
+                                        <Box key={option.value} sx={{ display: 'flex', alignItems: 'center' }}>
+                                            <input
+                                                type="radio"
+                                                id={option.value}
+                                                name="statusFilter"
+                                                value={option.value}
+                                                checked={statusFilter === option.value}
+                                                onChange={(e) => setStatusFilter(e.target.value as any)}
+                                                style={{ marginRight: 8 }}
+                                            />
+                                            <label htmlFor={option.value} style={{ cursor: 'pointer' }}>
+                                                {option.label}
+                                            </label>
+                                        </Box>
+                                    ))}
+                                </Box>
+                            </FormControl>
+                            <Typography variant="body2" sx={{ mt: 2, color: 'text.secondary' }}>
+                                Показано: {filtered.length} из {objects.length} объектов
+                            </Typography>
+                        </Paper>
+                    </Box>
+
+                    {/* Карта */}
+                    <Paper sx={{
+                        width: isMobile ? '100%' : '50%',
+                        p: isMobile ? 1 : 2,
+                        height: isMobile ? '400px' : 'auto',
+                        borderRadius: isMobile ? 1 : 2,
+                        mb: isMobile ? 3 : 0,
+                        overflow: 'hidden'
+                    }}>
+                        <SimpleYandexMap
+                            center={DEFAULT_CENTER}
+                            zoom={isMobile ? 11 : 12}
+                            markers={filteredMarkers}
+                            onMarkerClick={handleMarkerClick}
+                            onMapClick={handleMapClick}
+                            selectedPosition={selectedPosition}
+                            onMapReady={(map) => {
+                                handleMapReady(map);
+                                if (isMobile) {
+                                    // Отключаем только скролл страницы при взаимодействии с картой на мобильных
+                                    map.behaviors.disable('scrollZoom');
+                                    // Оставляем возможность перемещения карты
+                                }
+                            }}
+                            hoveredObjectId={hoveredObjectId}
+                        />
+                    </Paper>
+                </Box>
+
+                {/* Панель поиска и добавления */}
+                <Paper sx={{ mb: 3, p: 2, mt: 3 }}>
+                    <Box sx={{
+                        display: 'flex',
+                        gap: 2,
+                        alignItems: 'center',
+                        flexDirection: isMobile ? 'column' : 'row',
+                        width: '100%'
+                    }}>
+                        <TextField
+                            label="Поиск по объектам"
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                            size="small"
+                            sx={{
+                                flex: 1,
+                                minWidth: isMobile ? '100%' : 200,
+                                '& .MuiInputLabel-root': {
+                                    color: 'text.secondary',
+                                    fontSize: isMobile ? '0.875rem' : '1rem'
+                                },
+                                '& .MuiOutlinedInput-root': {
+                                    fontSize: isMobile ? '0.875rem' : '1rem'
+                                }
+                            }}
+                            InputProps={{
+                                startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} />
+                            }}
+                        />
+                        {isMobile ? (
+                            <Fab
+                                color="primary"
+                                aria-label="add"
+                                onClick={() => setAddDialogOpen(true)}
+                                sx={{
+                                    position: 'fixed',
+                                    bottom: 16,
+                                    right: 16,
+                                    backgroundColor: colors.secondary.main,
+                                    color: '#000',
+                                    boxShadow: '0 4px 12px rgba(212, 175, 55, 0.5)',
+                                    '&:hover': {
+                                        backgroundColor: '#E5C158',
+                                        transform: 'scale(1.1)'
+                                    },
+                                    transition: 'all 0.3s ease',
+                                    zIndex: 1000
+                                }}
+                            >
+                                <AddIcon />
+                            </Fab>
+                        ) : (
+                            <Button
+                                variant="contained"
+                                startIcon={<AddIcon />}
+                                onClick={() => setAddDialogOpen(true)}
+                            >
+                                Добавить объект
+                            </Button>
+                        )}
+                    </Box>
+                </Paper>
+
+                {/* Список объектов */}
+                {loading ? (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+                        <CircularProgress />
+                    </Box>
+                ) : error ? (
+                    <Alert severity="error" sx={{ mb: 2 }}>
+                        {error}
+                        <Button
+                            onClick={loadObjects}
+                            sx={{ ml: 2 }}
+                            size="small"
+                        >
+                            Повторить
+                        </Button>
+                    </Alert>
+                ) : (
+                    isMobile ? (
+                        // Мобильный список объектов
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                            {filtered.map(obj => (
+                                <Paper
+                                    key={obj.id}
+                                    sx={{
+                                        p: 2,
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s ease',
+                                        border: selectedId === obj.id ? `2px solid ${colors.secondary.main}` : '1px solid rgba(255, 255, 255, 0.1)',
+                                        borderRadius: 2,
+                                        '&:hover': {
+                                            backgroundColor: 'rgba(255, 255, 255, 0.05)'
+                                        }
+                                    }}
+                                    onClick={() => toggleObjectExpansion(obj.id)}
+                                >
+                                    {/* Основная информация */}
+                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+                                            <LocationIcon sx={{ mr: 1, color: colors.secondary.main, fontSize: 16 }} />
+                                            <Typography variant="subtitle2" sx={{ fontWeight: 600, fontSize: '0.9rem' }}>
+                                                {obj.name}
+                                            </Typography>
+                                        </Box>
+                                        <Chip
+                                            label={getStatusText(obj.status)}
                                             size="small"
-                                            color="primary"
-                                            onClick={() => handleEditClick(obj)}
                                             sx={{
-                                                backgroundColor: 'rgba(25, 118, 210, 0.1)',
-                                                '&:hover': {
-                                                    backgroundColor: 'rgba(25, 118, 210, 0.2)'
-                                                }
-                                            }}
-                                        >
-                                            <EditIcon sx={{ fontSize: 18 }} />
-                                        </IconButton>
-                                        <IconButton
-                                            size="small"
-                                            color="error"
-                                            onClick={() => handleDeleteClick(obj)}
-                                            sx={{
-                                                backgroundColor: 'rgba(244, 67, 54, 0.1)',
-                                                '&:hover': {
-                                                    backgroundColor: 'rgba(244, 67, 54, 0.2)'
-                                                }
-                                            }}
-                                        >
-                                            <DeleteIcon sx={{ fontSize: 18 }} />
-                                        </IconButton>
-                                    </Box>
-                                    {/* Статус объекта справа */}
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <CircleIcon
-                                            sx={{
-                                                fontSize: 10,
-                                                color: getStatusColor(obj.status)
+                                                backgroundColor: getStatusColor(obj.status),
+                                                color: '#fff',
+                                                fontSize: '0.7rem',
+                                                height: 20
                                             }}
                                         />
-                                        {deletingId === obj.id ? (
-                                            <Typography
-                                                variant="caption"
-                                                sx={{
-                                                    color: getStatusColor(obj.status),
-                                                    fontWeight: 500,
-                                                    fontSize: '0.7rem'
-                                                }}
-                                            >
-                                                Удаление...
+                                    </Box>
+
+                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem', mb: 1 }}>
+                                        {obj.address}
+                                    </Typography>
+
+                                    {/* Раскрывающаяся информация */}
+                                    {expandedObjects.has(obj.id) && (
+                                        <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                                            {obj.description && (
+                                                <Typography variant="body2" sx={{ mb: 2, fontSize: '0.8rem', color: 'text.secondary' }}>
+                                                    {obj.description}
+                                                </Typography>
+                                            )}
+
+                                            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleEditClick(obj);
+                                                    }}
+                                                    sx={{
+                                                        color: colors.secondary.main,
+                                                        '&:hover': { backgroundColor: 'rgba(212, 175, 55, 0.1)' }
+                                                    }}
+                                                >
+                                                    <EditIcon fontSize="small" />
+                                                </IconButton>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleDeleteClick(obj);
+                                                    }}
+                                                    sx={{
+                                                        color: '#f44336',
+                                                        '&:hover': { backgroundColor: 'rgba(244, 67, 54, 0.1)' }
+                                                    }}
+                                                >
+                                                    <DeleteIcon fontSize="small" />
+                                                </IconButton>
+                                            </Box>
+                                        </Box>
+                                    )}
+                                </Paper>
+                            ))}
+                        </Box>
+                    ) : (
+                        // Десктопные карточки
+                        <Box sx={{
+                            display: 'grid',
+                            gap: 3,
+                            gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))'
+                        }}>
+                            {filtered.map(obj => (
+                                <Card
+                                    key={obj.id}
+                                    sx={{
+                                        height: '100%',
+                                        cursor: 'pointer',
+                                        transition: 'transform 0.2s, box-shadow 0.2s',
+                                        transform: selectedId === obj.id ? 'scale(1.02)' : 'scale(1)',
+                                        boxShadow: selectedId === obj.id ? 4 : 1,
+                                        '&:hover': {
+                                            transform: isMobile ? 'none' : 'scale(1.02)',
+                                            boxShadow: isMobile ? 1 : 4
+                                        },
+                                        borderRadius: isMobile ? 1 : 2
+                                    }}
+                                    onClick={() => setSelectedId(obj.id)}
+                                    onMouseEnter={() => setHoveredObjectId(obj.id)}
+                                    onMouseLeave={() => setHoveredObjectId(null)}
+                                >
+                                    <CardContent sx={{
+                                        pb: isMobile ? 0.5 : 1,
+                                        px: isMobile ? 2 : 3,
+                                        py: isMobile ? 1.5 : 2.5,
+                                        textAlign: 'left',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        height: '100%'
+                                    }}>
+                                        <Box sx={{ flex: 1 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
+                                                <LocationIcon sx={{ mr: 1.5, color: colors.secondary.main, fontSize: 20 }} />
+                                                <Typography variant="subtitle1" component="h3" noWrap sx={{
+                                                    fontSize: isMobile ? '0.85rem' : '0.95rem',
+                                                    fontWeight: 600,
+                                                    flex: 1,
+                                                    lineHeight: isMobile ? 1.2 : 1.5
+                                                }}>
+                                                    {obj.name}
+                                                </Typography>
+                                            </Box>
+                                            <Typography variant="body2" color="text.secondary" sx={{
+                                                mb: isMobile ? 1 : 1.5,
+                                                fontSize: isMobile ? '0.75rem' : '0.85rem',
+                                                lineHeight: isMobile ? 1.2 : 1.4
+                                            }}>
+                                                {obj.address}
                                             </Typography>
-                                        ) : (
-                                            <Typography
-                                                variant="caption"
-                                                sx={{
-                                                    color: getStatusColor(obj.status),
-                                                    fontWeight: 500,
-                                                    fontSize: '0.7rem'
+                                            <Box sx={{ mb: 1.5 }}>
+                                                <Typography variant="body2" sx={{
+                                                    display: '-webkit-box',
+                                                    WebkitLineClamp: expandedDescriptions.has(obj.id) ? 'unset' : 2,
+                                                    WebkitBoxOrient: 'vertical',
+                                                    overflow: 'hidden',
+                                                    cursor: 'pointer',
+                                                    fontSize: isMobile ? '0.7rem' : '0.8rem',
+                                                    lineHeight: isMobile ? 1.3 : 1.5,
+                                                    '&:hover': {
+                                                        color: isMobile ? 'inherit' : colors.secondary.main
+                                                    }
                                                 }}
-                                            >
-                                                {getStatusText(obj.status)}
-                                            </Typography>
-                                        )}
-                                    </Box>
-                                </Box>
-                            </CardContent>
-                        </Card>
-                    ))}
-                </Box>
-            )}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        toggleDescription(obj.id);
+                                                    }}>
+                                                    {obj.description}
+                                                </Typography>
+                                                {obj.description.length > 100 && (
+                                                    <IconButton
+                                                        size={isMobile ? "small" : "medium"}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            toggleDescription(obj.id);
+                                                        }}
+                                                        sx={{
+                                                            p: 0,
+                                                            mt: isMobile ? 0.25 : 0.5,
+                                                            color: colors.secondary.main,
+                                                            '&:hover': {
+                                                                backgroundColor: isMobile ? 'transparent' : 'rgba(212, 175, 55, 0.1)'
+                                                            }
+                                                        }}
+                                                    >
+                                                        {expandedDescriptions.has(obj.id) ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                                                    </IconButton>
+                                                )}
+                                            </Box>
+                                        </Box>
 
-            {/* Модальное окно добавления объекта */}
-            <Dialog
-                open={addDialogOpen}
-                onClose={() => setAddDialogOpen(false)}
-                maxWidth="sm"
-                fullWidth
-            >
-                <DialogTitle>Добавить новый объект</DialogTitle>
-                <DialogContent>
-                    <Box sx={{ pt: 1 }}>
-                        <TextField
-                            label="Название объекта"
-                            value={newObject.name}
-                            onChange={e => setNewObject(prev => ({ ...prev, name: e.target.value }))}
-                            fullWidth
-                            sx={{ mb: 2 }}
-                        />
-
-                        <Autocomplete
-                            freeSolo
-                            options={addressSuggestions}
-                            value={newObject.address}
-                            onChange={(_, value) => setNewObject(prev => ({ ...prev, address: value || '' }))}
-                            onInputChange={(_, value) => {
-                                setNewObject(prev => ({ ...prev, address: value }));
-                                handleAddressInput(value);
-                            }}
-                            renderInput={(params) => (
-                                <TextField
-                                    {...params}
-                                    label="Адрес"
-                                    fullWidth
-                                    sx={{ mb: 2 }}
-                                />
-                            )}
-                        />
-
-                        <TextField
-                            label="Описание"
-                            value={newObject.description}
-                            onChange={e => setNewObject(prev => ({ ...prev, description: e.target.value }))}
-                            fullWidth
-                            multiline
-                            rows={3}
-                            sx={{ mb: 2 }}
-                        />
-
-                        <FormControl fullWidth sx={{ mb: 2 }}>
-                            <InputLabel>Статус объекта</InputLabel>
-                            <Select
-                                value={newObject.status}
-                                onChange={e => setNewObject(prev => ({ ...prev, status: e.target.value as ObjectStatus }))}
-                                label="Статус объекта"
-                            >
-                                <MenuItem value="active">
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <CircleIcon sx={{ fontSize: 12, color: colors.status.success }} />
-                                        Активен
-                                    </Box>
-                                </MenuItem>
-                                <MenuItem value="inactive">
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <CircleIcon sx={{ fontSize: 12, color: colors.status.error }} />
-                                        Неактивен
-                                    </Box>
-                                </MenuItem>
-                                <MenuItem value="maintenance">
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <CircleIcon sx={{ fontSize: 12, color: colors.status.warning }} />
-                                        На обслуживании
-                                    </Box>
-                                </MenuItem>
-                            </Select>
-                        </FormControl>
-
-                        {selectedPosition && (
-                            <Alert severity="info" sx={{
-                                mb: 2,
-                                backgroundColor: '#2196f3',
-                                color: 'white',
-                                '& .MuiAlert-icon': {
-                                    color: 'white'
-                                },
-                                '& .MuiAlert-message': {
-                                    color: 'white'
-                                }
-                            }}>
-                                Позиция выбрана на карте: {selectedPosition[0].toFixed(6)}, {selectedPosition[1].toFixed(6)}
-                            </Alert>
-                        )}
-
-                        <Typography variant="body2" color="text.secondary">
-                            💡 Совет: Вы можете кликнуть на карте для выбора точной позиции объекта
-                        </Typography>
-                    </Box>
-                </DialogContent>
-                <DialogActions>
-                    <Button
-                        onClick={() => setAddDialogOpen(false)}
-                        sx={{
-                            color: '#F44336',
-                            '&:hover': {
-                                backgroundColor: 'rgba(244, 67, 54, 0.1)'
-                            }
-                        }}
-                    >
-                        Отмена
-                    </Button>
-                    <Button
-                        onClick={handleAddObject}
-                        variant="contained"
-                        disabled={!newObject.name || !newObject.address || addingObject}
-                        startIcon={addingObject ? <CircularProgress size={16} /> : undefined}
-                        sx={{
-                            backgroundColor: '#4CAF50',
-                            '&:hover': {
-                                backgroundColor: '#45a049'
-                            }
-                        }}
-                    >
-                        {addingObject ? 'Добавление...' : 'Добавить'}
-                    </Button>
-                </DialogActions>
-            </Dialog>
-
-            {/* Модальное окно редактирования и диалог удаления */}
-            <Dialog
-                open={editDialogOpen}
-                onClose={() => setEditDialogOpen(false)}
-                maxWidth="sm"
-                fullWidth
-            >
-                <DialogTitle>Редактировать объект</DialogTitle>
-                <DialogContent>
-                    <Box sx={{ pt: 1 }}>
-                        <TextField
-                            label="Название объекта"
-                            value={editObject?.name || ''}
-                            onChange={(e) => setEditObject(prev => prev ? { ...prev, name: e.target.value } : prev)}
-                            fullWidth
-                            sx={{ mb: 2 }}
-                        />
-
-                        <Autocomplete
-                            freeSolo
-                            options={addressSuggestions}
-                            value={editObject?.address || ''}
-                            onChange={(_, value) => setEditObject(prev => prev ? { ...prev, address: value || '' } : prev)}
-                            onInputChange={(_, value) => {
-                                setEditObject(prev => prev ? { ...prev, address: value } : prev);
-                                handleAddressInput(value);
-                            }}
-                            renderInput={(params) => (
-                                <TextField
-                                    {...params}
-                                    label="Адрес"
-                                    fullWidth
-                                    sx={{ mb: 2 }}
-                                />
-                            )}
-                        />
-
-                        <TextField
-                            label="Описание"
-                            value={editObject?.description || ''}
-                            onChange={(e) => setEditObject(prev => prev ? { ...prev, description: e.target.value } : prev)}
-                            fullWidth
-                            multiline
-                            rows={3}
-                            sx={{ mb: 2 }}
-                        />
-
-                        <FormControl fullWidth sx={{ mb: 2 }}>
-                            <InputLabel>Статус объекта</InputLabel>
-                            <Select
-                                value={editObject?.status || 'active'}
-                                onChange={(e) => setEditObject(prev => prev ? { ...prev, status: e.target.value as ObjectStatus } : prev)}
-                                label="Статус объекта"
-                            >
-                                <MenuItem value="active">
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <CircleIcon sx={{ fontSize: 12, color: colors.status.success }} />
-                                        Активен
-                                    </Box>
-                                </MenuItem>
-                                <MenuItem value="inactive">
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <CircleIcon sx={{ fontSize: 12, color: colors.status.error }} />
-                                        Неактивен
-                                    </Box>
-                                </MenuItem>
-                                <MenuItem value="maintenance">
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <CircleIcon sx={{ fontSize: 12, color: colors.status.warning }} />
-                                        На обслуживании
-                                    </Box>
-                                </MenuItem>
-                            </Select>
-                        </FormControl>
-
-                        {selectedPosition && (
-                            <Alert severity="info" sx={{
-                                mb: 2,
-                                backgroundColor: '#2196f3',
-                                color: 'white',
-                                '& .MuiAlert-icon': {
-                                    color: 'white'
-                                },
-                                '& .MuiAlert-message': {
-                                    color: 'white'
-                                }
-                            }}>
-                                Позиция выбрана на карте: {selectedPosition[0].toFixed(6)}, {selectedPosition[1].toFixed(6)}
-                            </Alert>
-                        )}
-
-                        <Typography variant="body2" color="text.secondary">
-                            💡 Совет: Вы можете кликнуть на карте для выбора точной позиции объекта
-                        </Typography>
-                    </Box>
-                </DialogContent>
-                <DialogActions>
-                    <Button
-                        onClick={() => setEditDialogOpen(false)}
-                        sx={{
-                            color: '#F44336',
-                            '&:hover': {
-                                backgroundColor: 'rgba(244, 67, 54, 0.1)'
-                            }
-                        }}
-                    >
-                        Отмена
-                    </Button>
-                    <Button
-                        onClick={async () => {
-                            if (!editObject) return;
-                            setAddingObject(true);
-                            try {
-                                let position: [number, number] = editObject.position;
-                                // Геокодируем адрес, если он изменился
-                                if (editObject.address !== objectToEdit?.address) {
-                                    let addressForGeocode = editObject.address;
-                                    if (!/хабаровск/i.test(addressForGeocode)) {
-                                        addressForGeocode += ', Хабаровск';
-                                    }
-                                    const geocodeResult = await geocodeAddress(addressForGeocode);
-                                    if (geocodeResult) {
-                                        position = geocodeResult.position;
-                                    } else {
-                                        showSnackbar('Не удалось определить координаты адреса. Укажите полный адрес с городом.', 'error');
-                                        setAddingObject(false);
-                                        return;
-                                    }
-                                }
-                                await updateObject(editObject.id, {
-                                    name: editObject.name,
-                                    address: editObject.address,
-                                    description: editObject.description,
-                                    position,
-                                    status: editObject.status
-                                });
-
-                                // Обновляем кэш и перезагружаем объекты
-                                cacheManager.clearCache('objects');
-                                await loadObjects();
-
-                                showSnackbar('Объект успешно обновлен', 'success');
-                                setEditDialogOpen(false);
-                            } catch (e) {
-                                showSnackbar('Ошибка при обновлении объекта', 'error');
-                            } finally {
-                                setAddingObject(false);
-                            }
-                        }}
-                        variant="contained"
-                        disabled={!editObject?.name || !editObject?.address || addingObject}
-                        startIcon={addingObject ? <CircularProgress size={16} /> : undefined}
-                        sx={{
-                            backgroundColor: '#2196F3',
-                            '&:hover': {
-                                backgroundColor: '#1976D2'
-                            }
-                        }}
-                    >
-                        {addingObject ? 'Обновление...' : 'Обновить'}
-                    </Button>
-                </DialogActions>
-            </Dialog>
-
-            <Dialog
-                open={deleteDialogOpen}
-                onClose={() => setDeleteDialogOpen(false)}
-                maxWidth="sm"
-                fullWidth
-            >
-                <DialogTitle>Удалить объект</DialogTitle>
-                <DialogContent>
-                    <Typography variant="body1" color="text.primary">
-                        Вы уверены, что хотите удалить этот объект?
-                    </Typography>
-                </DialogContent>
-                <DialogActions>
-                    <Button
-                        onClick={() => setDeleteDialogOpen(false)}
-                        sx={{
-                            color: '#2196F3',
-                            '&:hover': {
-                                backgroundColor: 'rgba(33, 150, 243, 0.1)'
-                            }
-                        }}
-                    >
-                        Отмена
-                    </Button>
-                    <Button
-                        onClick={async () => {
-                            if (!objectToDelete) return;
-                            setAddingObject(true);
-                            setDeletingId(objectToDelete.id);
-                            try {
-                                await deleteObject(objectToDelete.id);
-
-                                // Обновляем кэш и перезагружаем объекты
-                                cacheManager.clearCache('objects');
-                                await loadObjects();
-
-                                showSnackbar('Объект успешно удален', 'success');
-                                setDeleteDialogOpen(false);
-                                setDeletingId(null);
-                            } catch (e) {
-                                showSnackbar('Ошибка при удалении объекта', 'error');
-                            } finally {
-                                setAddingObject(false);
-                            }
-                        }}
-                        variant="contained"
-                        sx={{
-                            backgroundColor: '#F44336',
-                            '&:hover': {
-                                backgroundColor: '#D32F2F'
-                            }
-                        }}
-                    >
-                        Удалить
-                    </Button>
-                </DialogActions>
-            </Dialog>
-
-            {/* Модальное окно процесса удаления */}
-            <Dialog open={!!deletingId} maxWidth="xs" fullWidth PaperProps={{ sx: { textAlign: 'center', py: 4 } }}>
-                <DialogTitle sx={{ pb: 2 }}>Объект удаляется...</DialogTitle>
-                <DialogContent>
-                    <CircularProgress sx={{ mb: 2 }} />
-                    <Typography variant="body2" color="text.secondary">
-                        Пожалуйста, подождите. Объект будет удалён из списка и с карты.
-                    </Typography>
-                </DialogContent>
-            </Dialog>
-
-            {/* Snackbar для уведомлений */}
-            <Snackbar
-                open={snackbar.open}
-                autoHideDuration={6000}
-                onClose={() => setSnackbar({ ...snackbar, open: false })}
-            >
-                <Alert
-                    onClose={() => setSnackbar({ ...snackbar, open: false })}
-                    severity={snackbar.severity}
-                    sx={{
-                        backgroundColor: snackbar.severity === 'success' ? '#4caf50' : '#f44336',
-                        color: 'white',
-                        '& .MuiAlert-icon': {
-                            color: 'white'
-                        },
-                        '& .MuiAlert-message': {
-                            color: 'white'
-                        }
-                    }}
+                                        {/* Строка с иконками и статусом внизу карточки */}
+                                        <Box sx={{
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'center',
+                                            mt: 'auto',
+                                            pt: 2,
+                                            borderTop: '1px solid rgba(0, 0, 0, 0.1)'
+                                        }}>
+                                            <Box sx={{ display: 'flex', gap: 0.5 }}>
+                                                <IconButton
+                                                    size={isMobile ? "small" : "medium"}
+                                                    color="primary"
+                                                    onClick={() => handleEditClick(obj)}
+                                                    sx={{
+                                                        backgroundColor: 'rgba(25, 118, 210, 0.1)',
+                                                        padding: isMobile ? '4px' : '8px',
+                                                        '&:hover': {
+                                                            backgroundColor: isMobile ? 'rgba(25, 118, 210, 0.1)' : 'rgba(25, 118, 210, 0.2)'
+                                                        }
+                                                    }}
+                                                >
+                                                    <EditIcon sx={{ fontSize: 18 }} />
+                                                </IconButton>
+                                                <IconButton
+                                                    size="small"
+                                                    color="error"
+                                                    onClick={() => handleDeleteClick(obj)}
+                                                    sx={{
+                                                        backgroundColor: 'rgba(244, 67, 54, 0.1)',
+                                                        '&:hover': {
+                                                            backgroundColor: 'rgba(244, 67, 54, 0.2)'
+                                                        }
+                                                    }}
+                                                >
+                                                    <DeleteIcon sx={{ fontSize: 18 }} />
+                                                </IconButton>
+                                            </Box>
+                                            {/* Статус объекта справа */}
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <CircleIcon
+                                                    sx={{
+                                                        fontSize: 10,
+                                                        color: getStatusColor(obj.status)
+                                                    }}
+                                                />
+                                                {deletingId === obj.id ? (
+                                                    <Typography
+                                                        variant="caption"
+                                                        sx={{
+                                                            color: getStatusColor(obj.status),
+                                                            fontWeight: 500,
+                                                            fontSize: '0.7rem'
+                                                        }}
+                                                    >
+                                                        Удаление...
+                                                    </Typography>
+                                                ) : (
+                                                    <Typography
+                                                        variant="caption"
+                                                        sx={{
+                                                            color: getStatusColor(obj.status),
+                                                            fontWeight: 500,
+                                                            fontSize: isMobile ? '0.65rem' : '0.7rem'
+                                                        }}
+                                                    >
+                                                        {getStatusText(obj.status)}
+                                                    </Typography>
+                                                )}
+                                            </Box>
+                                        </Box>
+                                    </CardContent>
+                                </Card>
+                            ))}
+                        </Box>
+                    )
+                )}
+                {/* Модальное окно добавления объекта */}
+                <Dialog
+                    open={addDialogOpen}
+                    onClose={() => setAddDialogOpen(false)}
+                    maxWidth="sm"
+                    fullWidth
                 >
-                    {snackbar.message}
-                </Alert>
-            </Snackbar>
+                    <DialogTitle>Добавить новый объект</DialogTitle>
+                    <DialogContent>
+                        <Box sx={{ pt: 1 }}>
+                            <TextField
+                                label="Название объекта"
+                                value={newObject.name}
+                                onChange={e => setNewObject(prev => ({ ...prev, name: e.target.value }))}
+                                fullWidth
+                                sx={{ mb: 2 }}
+                            />
+
+                            <Autocomplete
+                                freeSolo
+                                options={addressSuggestions}
+                                value={newObject.address}
+                                onChange={(_, value) => setNewObject(prev => ({ ...prev, address: value || '' }))}
+                                onInputChange={(_, value) => {
+                                    setNewObject(prev => ({ ...prev, address: value }));
+                                    handleAddressInput(value);
+                                }}
+                                renderInput={(params) => (
+                                    <TextField
+                                        {...params}
+                                        label="Адрес"
+                                        fullWidth
+                                        sx={{ mb: 2 }}
+                                    />
+                                )}
+                            />
+
+                            <TextField
+                                label="Описание"
+                                value={newObject.description}
+                                onChange={e => setNewObject(prev => ({ ...prev, description: e.target.value }))}
+                                fullWidth
+                                multiline
+                                rows={3}
+                                sx={{ mb: 2 }}
+                            />
+
+                            <FormControl fullWidth sx={{ mb: 2 }}>
+                                <InputLabel>Статус объекта</InputLabel>
+                                <Select
+                                    value={newObject.status}
+                                    onChange={e => setNewObject(prev => ({ ...prev, status: e.target.value as ObjectStatus }))}
+                                    label="Статус объекта"
+                                >
+                                    <MenuItem value="active">
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <CircleIcon sx={{ fontSize: 12, color: colors.status.success }} />
+                                            Активен
+                                        </Box>
+                                    </MenuItem>
+                                    <MenuItem value="inactive">
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <CircleIcon sx={{ fontSize: 12, color: colors.status.error }} />
+                                            Неактивен
+                                        </Box>
+                                    </MenuItem>
+                                    <MenuItem value="maintenance">
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <CircleIcon sx={{ fontSize: 12, color: colors.status.warning }} />
+                                            На обслуживании
+                                        </Box>
+                                    </MenuItem>
+                                </Select>
+                            </FormControl>
+
+                            {selectedPosition && (
+                                <Alert severity="info" sx={{
+                                    mb: 2,
+                                    backgroundColor: '#2196f3',
+                                    color: 'white',
+                                    '& .MuiAlert-icon': {
+                                        color: 'white'
+                                    },
+                                    '& .MuiAlert-message': {
+                                        color: 'white'
+                                    }
+                                }}>
+                                    Позиция выбрана на карте: {selectedPosition[0].toFixed(6)}, {selectedPosition[1].toFixed(6)}
+                                </Alert>
+                            )}
+
+                            <Typography variant="body2" color="text.secondary">
+                                💡 Совет: Вы можете кликнуть на карте для выбора точной позиции объекта
+                            </Typography>
+                        </Box>
+                    </DialogContent>
+                    <DialogActions>
+                        <Button
+                            onClick={() => setAddDialogOpen(false)}
+                            sx={{
+                                color: '#F44336',
+                                '&:hover': {
+                                    backgroundColor: 'rgba(244, 67, 54, 0.1)'
+                                }
+                            }}
+                        >
+                            Отмена
+                        </Button>
+                        <Button
+                            onClick={handleAddObject}
+                            variant="contained"
+                            disabled={!newObject.name || !newObject.address || addingObject}
+                            startIcon={addingObject ? <CircularProgress size={16} /> : undefined}
+                            sx={{
+                                backgroundColor: '#4CAF50',
+                                '&:hover': {
+                                    backgroundColor: '#45a049'
+                                }
+                            }}
+                        >
+                            {addingObject ? 'Добавление...' : 'Добавить'}
+                        </Button>
+                    </DialogActions>
+                </Dialog>
+
+                {/* Модальное окно редактирования и диалог удаления */}
+                <Dialog
+                    open={editDialogOpen}
+                    onClose={() => setEditDialogOpen(false)}
+                    maxWidth="sm"
+                    fullWidth
+                >
+                    <DialogTitle>Редактировать объект</DialogTitle>
+                    <DialogContent>
+                        <Box sx={{ pt: 1 }}>
+                            <TextField
+                                label="Название объекта"
+                                value={editObject?.name || ''}
+                                onChange={(e) => setEditObject(prev => prev ? { ...prev, name: e.target.value } : prev)}
+                                fullWidth
+                                sx={{ mb: 2 }}
+                            />
+
+                            <Autocomplete
+                                freeSolo
+                                options={addressSuggestions}
+                                value={editObject?.address || ''}
+                                onChange={(_, value) => setEditObject(prev => prev ? { ...prev, address: value || '' } : prev)}
+                                onInputChange={(_, value) => {
+                                    setEditObject(prev => prev ? { ...prev, address: value } : prev);
+                                    handleAddressInput(value);
+                                }}
+                                renderInput={(params) => (
+                                    <TextField
+                                        {...params}
+                                        label="Адрес"
+                                        fullWidth
+                                        sx={{ mb: 2 }}
+                                    />
+                                )}
+                            />
+
+                            <TextField
+                                label="Описание"
+                                value={editObject?.description || ''}
+                                onChange={(e) => setEditObject(prev => prev ? { ...prev, description: e.target.value } : prev)}
+                                fullWidth
+                                multiline
+                                rows={3}
+                                sx={{ mb: 2 }}
+                            />
+
+                            <FormControl fullWidth sx={{ mb: 2 }}>
+                                <InputLabel>Статус объекта</InputLabel>
+                                <Select
+                                    value={editObject?.status || 'active'}
+                                    onChange={(e) => setEditObject(prev => prev ? { ...prev, status: e.target.value as ObjectStatus } : prev)}
+                                    label="Статус объекта"
+                                >
+                                    <MenuItem value="active">
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <CircleIcon sx={{ fontSize: 12, color: colors.status.success }} />
+                                            Активен
+                                        </Box>
+                                    </MenuItem>
+                                    <MenuItem value="inactive">
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <CircleIcon sx={{ fontSize: 12, color: colors.status.error }} />
+                                            Неактивен
+                                        </Box>
+                                    </MenuItem>
+                                    <MenuItem value="maintenance">
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <CircleIcon sx={{ fontSize: 12, color: colors.status.warning }} />
+                                            На обслуживании
+                                        </Box>
+                                    </MenuItem>
+                                </Select>
+                            </FormControl>
+
+                            {selectedPosition && (
+                                <Alert severity="info" sx={{
+                                    mb: 2,
+                                    backgroundColor: '#2196f3',
+                                    color: 'white',
+                                    '& .MuiAlert-icon': {
+                                        color: 'white'
+                                    },
+                                    '& .MuiAlert-message': {
+                                        color: 'white'
+                                    }
+                                }}>
+                                    Позиция выбрана на карте: {selectedPosition[0].toFixed(6)}, {selectedPosition[1].toFixed(6)}
+                                </Alert>
+                            )}
+
+                            <Typography variant="body2" color="text.secondary">
+                                💡 Совет: Вы можете кликнуть на карте для выбора точной позиции объекта
+                            </Typography>
+                        </Box>
+                    </DialogContent>
+                    <DialogActions>
+                        <Button
+                            onClick={() => setEditDialogOpen(false)}
+                            sx={{
+                                color: '#F44336',
+                                '&:hover': {
+                                    backgroundColor: 'rgba(244, 67, 54, 0.1)'
+                                }
+                            }}
+                        >
+                            Отмена
+                        </Button>
+                        <Button
+                            onClick={async () => {
+                                if (!editObject) return;
+                                setAddingObject(true);
+                                try {
+                                    let position: [number, number] = editObject.position;
+                                    // Геокодируем адрес, если он изменился
+                                    if (editObject.address !== objectToEdit?.address) {
+                                        let addressForGeocode = editObject.address;
+                                        if (!/хабаровск/i.test(addressForGeocode)) {
+                                            addressForGeocode += ', Хабаровск';
+                                        }
+                                        const geocodeResult = await geocodeAddress(addressForGeocode);
+                                        if (geocodeResult) {
+                                            position = geocodeResult.position;
+                                        } else {
+                                            showSnackbar('Не удалось определить координаты адреса. Укажите полный адрес с городом.', 'error');
+                                            setAddingObject(false);
+                                            return;
+                                        }
+                                    }
+                                    await updateObject(editObject.id, {
+                                        name: editObject.name,
+                                        address: editObject.address,
+                                        description: editObject.description,
+                                        position,
+                                        status: editObject.status
+                                    });
+
+                                    // Обновляем кэш и перезагружаем объекты
+                                    cacheManager.clearCache('objects');
+                                    await loadObjects();
+
+                                    showSnackbar('Объект успешно обновлен', 'success');
+                                    setEditDialogOpen(false);
+                                } catch (e) {
+                                    showSnackbar('Ошибка при обновлении объекта', 'error');
+                                } finally {
+                                    setAddingObject(false);
+                                }
+                            }}
+                            variant="contained"
+                            disabled={!editObject?.name || !editObject?.address || addingObject}
+                            startIcon={addingObject ? <CircularProgress size={16} /> : undefined}
+                            sx={{
+                                backgroundColor: '#2196F3',
+                                '&:hover': {
+                                    backgroundColor: '#1976D2'
+                                }
+                            }}
+                        >
+                            {addingObject ? 'Обновление...' : 'Обновить'}
+                        </Button>
+                    </DialogActions>
+                </Dialog>
+
+                <Dialog
+                    open={deleteDialogOpen}
+                    onClose={() => setDeleteDialogOpen(false)}
+                    maxWidth="sm"
+                    fullWidth
+                >
+                    <DialogTitle>Удалить объект</DialogTitle>
+                    <DialogContent>
+                        <Typography variant="body1" color="text.primary">
+                            Вы уверены, что хотите удалить этот объект?
+                        </Typography>
+                    </DialogContent>
+                    <DialogActions>
+                        <Button
+                            onClick={() => setDeleteDialogOpen(false)}
+                            sx={{
+                                color: '#2196F3',
+                                '&:hover': {
+                                    backgroundColor: 'rgba(33, 150, 243, 0.1)'
+                                }
+                            }}
+                        >
+                            Отмена
+                        </Button>
+                        <Button
+                            onClick={async () => {
+                                if (!objectToDelete) return;
+                                setAddingObject(true);
+                                setDeletingId(objectToDelete.id);
+                                try {
+                                    await deleteObject(objectToDelete.id);
+
+                                    // Обновляем кэш и перезагружаем объекты
+                                    cacheManager.clearCache('objects');
+                                    await loadObjects();
+
+                                    showSnackbar('Объект успешно удален', 'success');
+                                    setDeleteDialogOpen(false);
+                                    setDeletingId(null);
+                                } catch (e) {
+                                    showSnackbar('Ошибка при удалении объекта', 'error');
+                                } finally {
+                                    setAddingObject(false);
+                                }
+                            }}
+                            variant="contained"
+                            sx={{
+                                backgroundColor: '#F44336',
+                                '&:hover': {
+                                    backgroundColor: '#D32F2F'
+                                }
+                            }}
+                        >
+                            Удалить
+                        </Button>
+                    </DialogActions>
+                </Dialog>
+
+                {/* Модальное окно процесса удаления */}
+                <Dialog open={!!deletingId} maxWidth="xs" fullWidth PaperProps={{ sx: { textAlign: 'center', py: 4 } }}>
+                    <DialogTitle sx={{ pb: 2 }}>Объект удаляется...</DialogTitle>
+                    <DialogContent>
+                        <CircularProgress sx={{ mb: 2 }} />
+                        <Typography variant="body2" color="text.secondary">
+                            Пожалуйста, подождите. Объект будет удалён из списка и с карты.
+                        </Typography>
+                    </DialogContent>
+                </Dialog>
+
+                {/* Модальное окно загрузки при создании объекта */}
+                <Dialog open={loadingDialogOpen} maxWidth="xs" fullWidth PaperProps={{ sx: { textAlign: 'center', py: 4 } }}>
+                    <DialogTitle sx={{ pb: 2 }}>Объект добавляется...</DialogTitle>
+                    <DialogContent>
+                        <CircularProgress sx={{ mb: 2 }} />
+                        <Typography variant="body2" color="text.secondary">
+                            Пожалуйста, подождите. Объект добавляется в базу данных и будет доступен кураторам.
+                        </Typography>
+                    </DialogContent>
+                </Dialog>
+
+                {/* Snackbar для уведомлений */}
+                <Snackbar
+                    open={snackbar.open}
+                    autoHideDuration={6000}
+                    onClose={() => setSnackbar({ ...snackbar, open: false })}
+                >
+                    <Alert
+                        onClose={() => setSnackbar({ ...snackbar, open: false })}
+                        severity={snackbar.severity}
+                        sx={{
+                            backgroundColor: snackbar.severity === 'success' ? '#4caf50' : '#f44336',
+                            color: 'white',
+                            '& .MuiAlert-icon': {
+                                color: 'white'
+                            },
+                            '& .MuiAlert-message': {
+                                color: 'white'
+                            }
+                        }}
+                    >
+                        {snackbar.message}
+                    </Alert>
+                </Snackbar>
+            </Box>
         </Box>
     );
 };
 
-export default ObjectManagement; 
+export default ObjectManagement;

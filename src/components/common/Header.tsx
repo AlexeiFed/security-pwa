@@ -91,10 +91,11 @@ const Header = ({
 
     return (
         <AppBar
-            position="static"
+            position="fixed"
             sx={{
                 backgroundColor: colors.primary.main,
-                boxShadow: 2
+                boxShadow: 2,
+                zIndex: (theme) => theme.zIndex.drawer + 1
             }}
         >
             <Toolbar sx={{ minHeight: { xs: '70px !important', sm: '100px !important' }, px: { xs: 1, sm: 3 } }}>

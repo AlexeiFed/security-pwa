@@ -34,7 +34,10 @@ import {
     Accordion,
     AccordionSummary,
     AccordionDetails,
-    CircularProgress
+    CircularProgress,
+    Fab,
+    useTheme,
+    useMediaQuery
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -53,12 +56,14 @@ import { useNavigate } from 'react-router-dom';
 import { Curator, ObjectData, CreateCuratorForm } from '../../types';
 import { getCurators, authService, deleteCurator, updateCuratorObjects, updateCuratorStatus, updateCuratorCredentials } from '../../services/auth';
 import { getObjects } from '../../services/objects';
-import Header from '../common/Header';
+import AdminMobileHeader from '../common/AdminMobileHeader';
 import { cacheManager } from '../../services/cache';
 import { colors } from '../../utils/colors';
 
 const CuratorManagement = () => {
     const navigate = useNavigate();
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
     const [curators, setCurators] = useState<Curator[]>([]);
     const [objects, setObjects] = useState<ObjectData[]>([]);
     const [loading, setLoading] = useState(true);
@@ -76,7 +81,8 @@ const CuratorManagement = () => {
     const [newCurator, setNewCurator] = useState<CreateCuratorForm>({
         firstName: '',
         lastName: '',
-        email: '',
+        email: '@vityaz.com',
+        phone: '',
         assignedObjects: []
     });
 
@@ -84,6 +90,7 @@ const CuratorManagement = () => {
         firstName: '',
         lastName: '',
         email: '',
+        phone: '',
         assignedObjects: []
     });
 
@@ -95,6 +102,48 @@ const CuratorManagement = () => {
     const [statusDialogOpen, setStatusDialogOpen] = useState(false);
     const [statusCurator, setStatusCurator] = useState<Curator | null>(null);
     const [newStatus, setNewStatus] = useState('working');
+    const [updatingStatus, setUpdatingStatus] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+
+    // Стили для TextField в темной теме
+    const textFieldStyles = {
+        '& .MuiInputLabel-root': { color: 'rgba(255, 255, 255, 0.7)' },
+        '& .MuiInputLabel-root.Mui-focused': { color: '#1976d2' },
+        '& .MuiOutlinedInput-root': {
+            color: '#fff',
+            '& fieldset': { borderColor: 'rgba(255, 255, 255, 0.3)' },
+            '&:hover fieldset': { borderColor: 'rgba(255, 255, 255, 0.5)' },
+            '&.Mui-focused fieldset': { borderColor: '#1976d2' }
+        }
+    };
+
+    // Функция транслитерации русских символов в латиницу
+    const transliterate = (text: string): string => {
+        const transliterationMap: { [key: string]: string } = {
+            'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo',
+            'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+            'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+            'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch',
+            'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+            'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'Yo',
+            'Ж': 'Zh', 'З': 'Z', 'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M',
+            'Н': 'N', 'О': 'O', 'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U',
+            'Ф': 'F', 'Х': 'Kh', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch',
+            'Ъ': '', 'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya'
+        };
+
+        return text.split('').map(char => transliterationMap[char] || char).join('').toLowerCase();
+    };
+
+    // Обработчик изменения фамилии с автозаполнением email
+    const handleLastNameChange = (lastName: string) => {
+        const transliteratedLastName = transliterate(lastName);
+        setNewCurator(prev => ({
+            ...prev,
+            lastName,
+            email: transliteratedLastName ? `${transliteratedLastName}@vityaz.com` : '@vityaz.com'
+        }));
+    };
 
     useEffect(() => {
         loadData();
@@ -128,7 +177,7 @@ const CuratorManagement = () => {
 
     const handleAddCurator = async () => {
         try {
-            if (!newCurator.firstName || !newCurator.lastName || !newCurator.email) {
+            if (!newCurator.firstName || !newCurator.lastName || !newCurator.email || !newCurator.phone) {
                 showSnackbar('Заполните все обязательные поля', 'error');
                 return;
             }
@@ -137,7 +186,7 @@ const CuratorManagement = () => {
             const name = `${newCurator.firstName} ${newCurator.lastName}`;
 
             // Создаем пользователя в Firebase Auth без входа в систему
-            const user = await authService.createUserWithoutLogin(newCurator.email, password, 'curator', name);
+            const user = await authService.createUserWithoutLogin(newCurator.email, password, 'curator', name, newCurator.phone);
 
             // Сохраняем пароль в Firestore для возможности его просмотра/изменения
             if (user.uid) {
@@ -155,7 +204,8 @@ const CuratorManagement = () => {
             setNewCurator({
                 firstName: '',
                 lastName: '',
-                email: '',
+                email: '@vityaz.com',
+                phone: '',
                 assignedObjects: []
             });
         } catch (err) {
@@ -261,6 +311,12 @@ const CuratorManagement = () => {
         return objects.filter(obj => !assignedObjectIds.includes(obj.id));
     };
 
+    // Фильтрация кураторов по поисковому запросу
+    const filteredCurators = curators.filter(curator =>
+        curator.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        curator.email.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
     const showSnackbar = (message: string, severity: 'success' | 'error') => {
         setSnackbar({ open: true, message, severity });
     };
@@ -271,16 +327,18 @@ const CuratorManagement = () => {
     };
 
     const sendToWhatsApp = () => {
-        const message = `Добрый день! Ваши учетные данные для входа в систему:\n\nЛогин: ${createdCredentials.email}\nПароль: ${createdCredentials.password}\n\nС уважением, администрация ЧОО "ВИТЯЗЬ"`;
+        const appUrl = `${window.location.origin}?email=${encodeURIComponent(createdCredentials.email)}&password=${encodeURIComponent(createdCredentials.password)}`;
+        const message = `Добрый день! Ваши учетные данные для входа в систему безопасности ЧОО "ВИТЯЗЬ":\n\n👤 Логин: ${createdCredentials.email}\n🔐 Пароль: ${createdCredentials.password}\n\n🚀 Для быстрого входа используйте эту ссылку:\n${appUrl}\n\nС уважением, администрация ЧОО "ВИТЯЗЬ"`;
         const encodedMessage = encodeURIComponent(message);
         const whatsappUrl = `https://wa.me/?text=${encodedMessage}`;
         window.open(whatsappUrl, '_blank');
     };
 
     const sendToTelegram = () => {
-        const message = `Добрый день! Ваши учетные данные для входа в систему:\n\nЛогин: ${createdCredentials.email}\nПароль: ${createdCredentials.password}\n\nС уважением, администрация ЧОО "ВИТЯЗЬ"`;
+        const appUrl = `${window.location.origin}?email=${encodeURIComponent(createdCredentials.email)}&password=${encodeURIComponent(createdCredentials.password)}`;
+        const message = `Добрый день! Ваши учетные данные для входа в систему безопасности ЧОО "ВИТЯЗЬ":\n\n👤 Логин: ${createdCredentials.email}\n🔐 Пароль: ${createdCredentials.password}\n\n🚀 Для быстрого входа используйте эту ссылку:\n${appUrl}\n\nС уважением, администрация ЧОО "ВИТЯЗЬ"`;
         const encodedMessage = encodeURIComponent(message);
-        const telegramUrl = `https://t.me/share/url?url=${encodeURIComponent(window.location.origin)}&text=${encodedMessage}`;
+        const telegramUrl = `https://t.me/share/url?url=${encodeURIComponent(appUrl)}&text=${encodedMessage}`;
         window.open(telegramUrl, '_blank');
     };
 
@@ -317,40 +375,92 @@ const CuratorManagement = () => {
     }
 
     return (
-        <Box sx={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0A2463 0%, #000 100%)' }}>
-            <Box sx={{ p: 3 }}>
-                {/* Заголовок страницы */}
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+        <Box sx={{
+            minHeight: '100vh',
+            background: 'linear-gradient(135deg, #0A2463 0%, #000 100%)',
+            pb: isMobile ? 8 : 3 // Отступ снизу для FAB кнопки на мобильных
+        }}>
+            {/* Шапка только на мобильных */}
+            {isMobile && <AdminMobileHeader title="Управление кураторами" />}
+            <Box sx={{
+                p: 3,
+                pt: isMobile ? 10 : 16,
+                pb: isMobile ? 1 : 3
+            }}>
+
+                {/* Иконка назад и заголовок в одной строке */}
+                <Box sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    mb: isMobile ? 2 : 3,
+                    gap: 2
+                }}>
                     <IconButton
-                        onClick={() => navigate('/')}
+                        onClick={() => navigate('/admin')}
                         sx={{
-                            mr: 2,
-                            color: '#D4AF37',
-                            backgroundColor: 'rgba(212, 175, 55, 0.1)',
+                            color: '#ffffff',
+                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                            transition: 'all 0.3s ease',
                             '&:hover': {
-                                backgroundColor: 'rgba(212, 175, 55, 0.2)',
-                                transform: 'scale(1.1)'
-                            },
-                            transition: 'all 0.3s ease'
+                                backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                                transform: 'scale(1.1)',
+                                boxShadow: '0 4px 12px rgba(255, 255, 255, 0.3)'
+                            }
                         }}
                     >
                         <ArrowBackIcon />
                     </IconButton>
-                    <Typography variant="h4" component="h1" sx={{ color: '#fff', fontWeight: 600 }}>
+
+                    <Typography
+                        variant={isMobile ? "h5" : "h4"}
+                        sx={{
+                            color: '#ffffff',
+                            fontWeight: 600,
+                            fontSize: isMobile ? '1.5rem' : undefined
+                        }}
+                    >
                         Управление кураторами
                     </Typography>
                 </Box>
 
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 3 }}>
-                    <Button
-                        variant="contained"
-                        startIcon={<AddIcon />}
-                        onClick={() => setAddDialogOpen(true)}
-                        sx={{ backgroundColor: '#D4AF37', '&:hover': { backgroundColor: '#B8941F' } }}
-                    >
-                        Добавить куратора
-                    </Button>
+                {/* Поле поиска */}
+                <Box sx={{ mb: 3 }}>
+                    <TextField
+                        fullWidth
+                        placeholder="Поиск куратора по имени или email..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        sx={{
+                            ...textFieldStyles,
+                            '& .MuiOutlinedInput-root': {
+                                ...textFieldStyles['& .MuiOutlinedInput-root'],
+                                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                borderRadius: 2
+                            }
+                        }}
+                        InputProps={{
+                            startAdornment: (
+                                <Box sx={{ mr: 1, color: 'rgba(255, 255, 255, 0.7)' }}>
+                                    🔍
+                                </Box>
+                            )
+                        }}
+                    />
                 </Box>
+
+                {/* Кнопка добавления только для десктопа */}
+                {!isMobile && (
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 3 }}>
+                        <Button
+                            variant="contained"
+                            startIcon={<AddIcon />}
+                            onClick={() => setAddDialogOpen(true)}
+                            sx={{ backgroundColor: '#D4AF37', '&:hover': { backgroundColor: '#B8941F' } }}
+                        >
+                            Добавить куратора
+                        </Button>
+                    </Box>
+                )}
 
                 {error && (
                     <Alert severity="error" sx={{ mb: 2 }}>
@@ -358,8 +468,14 @@ const CuratorManagement = () => {
                     </Alert>
                 )}
 
-                <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))' }}>
-                    {curators.map((curator) => (
+                <Box sx={{
+                    display: 'grid',
+                    gap: isMobile ? 1.5 : 3,
+                    gridTemplateColumns: isMobile
+                        ? 'repeat(auto-fill, minmax(160px, 1fr))'
+                        : 'repeat(auto-fill, minmax(250px, 1fr))'
+                }}>
+                    {filteredCurators.map((curator) => (
                         <Card
                             key={curator.uid}
                             sx={{
@@ -370,7 +486,7 @@ const CuratorManagement = () => {
                                 boxShadow: '0 8px 32px 0 rgba(10,36,99,0.37)',
                                 transition: 'all 0.3s ease',
                                 '&:hover': {
-                                    transform: 'translateY(-8px) scale(1.02)',
+                                    transform: isMobile ? 'translateY(-4px) scale(1.01)' : 'translateY(-8px) scale(1.02)',
                                     boxShadow: '0 16px 48px 0 rgba(212, 175, 55, 0.3)',
                                     borderColor: '#E5C158',
                                     '& .card-icon': {
@@ -380,41 +496,73 @@ const CuratorManagement = () => {
                             }}
                             onClick={() => handleCuratorClick(curator)}
                         >
-                            <CardContent sx={{ p: 3 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                            <CardContent sx={{ p: isMobile ? 1.5 : 3 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', mb: isMobile ? 1 : 2 }}>
                                     <PersonIcon sx={{
-                                        mr: 1,
+                                        mr: isMobile ? 0.5 : 1,
                                         color: '#ffffff',
+                                        fontSize: isMobile ? '1.2rem' : undefined,
                                         transition: 'transform 0.3s ease',
                                         className: 'card-icon'
                                     }} />
-                                    <Typography variant="h6" component="div" sx={{ color: '#ffffff', fontWeight: 600 }}>
+                                    <Typography
+                                        variant={isMobile ? "body2" : "h6"}
+                                        component="div"
+                                        sx={{
+                                            color: '#ffffff',
+                                            fontWeight: 600,
+                                            fontSize: isMobile ? '0.9rem' : undefined
+                                        }}
+                                    >
                                         {curator.name}
                                     </Typography>
                                 </Box>
-                                <Typography sx={{ mb: 1, textAlign: 'left', color: 'rgba(255, 255, 255, 0.8)' }}>
+                                <Typography
+                                    sx={{
+                                        mb: isMobile ? 0.5 : 1,
+                                        textAlign: 'left',
+                                        color: 'rgba(255, 255, 255, 0.8)',
+                                        fontSize: isMobile ? '0.7rem' : undefined
+                                    }}
+                                >
                                     {curator.email}
                                 </Typography>
-                                <Typography variant="body2" sx={{ color: '#ffffff', mb: 2, textAlign: 'left', fontWeight: 500 }}>
+                                <Typography
+                                    variant="body2"
+                                    sx={{
+                                        color: '#ffffff',
+                                        mb: isMobile ? 1 : 2,
+                                        textAlign: 'left',
+                                        fontWeight: 500,
+                                        fontSize: isMobile ? '0.65rem' : undefined
+                                    }}
+                                >
                                     Объектов — {(curator.assignedObjects && curator.assignedObjects.length) || 0}
                                 </Typography>
 
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <Box sx={{
+                                    display: 'flex',
+                                    flexDirection: isMobile ? 'column' : 'row',
+                                    justifyContent: 'space-between',
+                                    alignItems: isMobile ? 'flex-start' : 'center',
+                                    gap: isMobile ? 1 : 0
+                                }}>
                                     <Chip
                                         label={getStatusText(curator.status)}
                                         color={getStatusColor(curator.status) as any}
-                                        size="small"
+                                        size={isMobile ? "small" : "small"}
                                         sx={{
                                             fontWeight: 600,
+                                            fontSize: isMobile ? '0.7rem' : undefined,
                                             '& .MuiChip-label': {
                                                 color: '#ffffff'
                                             }
                                         }}
                                     />
-                                    <Box sx={{ display: 'flex', gap: 1 }}>
+                                    <Box sx={{ display: 'flex', gap: isMobile ? 0.5 : 1 }}>
                                         <Tooltip title="Добавить объект" arrow>
                                             <IconButton
-                                                size="small"
+                                                size={isMobile ? "small" : "small"}
                                                 sx={{
                                                     color: '#4CAF50',
                                                     backgroundColor: 'rgba(76, 175, 80, 0.1)',
@@ -430,6 +578,7 @@ const CuratorManagement = () => {
                                                         firstName: curator.name.split(' ')[0] || '',
                                                         lastName: curator.name.split(' ')[1] || '',
                                                         email: curator.email,
+                                                        phone: curator.phone || '',
                                                         assignedObjects: curator.assignedObjects
                                                     });
                                                     setEditDialogOpen(true);
@@ -441,7 +590,7 @@ const CuratorManagement = () => {
 
                                         <Tooltip title="Изменить статус" arrow>
                                             <IconButton
-                                                size="small"
+                                                size={isMobile ? "small" : "small"}
                                                 sx={{
                                                     color: '#2196F3',
                                                     backgroundColor: 'rgba(33, 150, 243, 0.1)',
@@ -462,7 +611,7 @@ const CuratorManagement = () => {
                                         </Tooltip>
                                         <Tooltip title="Удалить куратора" arrow>
                                             <IconButton
-                                                size="small"
+                                                size={isMobile ? "small" : "small"}
                                                 sx={{
                                                     color: '#F44336',
                                                     backgroundColor: 'rgba(244, 67, 54, 0.1)',
@@ -487,23 +636,61 @@ const CuratorManagement = () => {
                     ))}
                 </Box>
 
-                {curators.length === 0 && (
+                {filteredCurators.length === 0 && (
                     <Card sx={{
                         background: 'linear-gradient(135deg, #0A2463 0%, #000 100%)',
                         border: '2px solid #D4AF37',
                         borderRadius: 3
                     }}>
-                        <CardContent sx={{ textAlign: 'center', py: 4 }}>
-                            <Typography variant="h6" sx={{ color: 'white', mb: 2 }}>
-                                Кураторы не найдены
+                        <CardContent sx={{ textAlign: 'center', py: isMobile ? 3 : 4 }}>
+                            <Typography
+                                variant={isMobile ? "body1" : "h6"}
+                                sx={{
+                                    color: 'white',
+                                    mb: 2,
+                                    fontSize: isMobile ? '1.1rem' : undefined
+                                }}
+                            >
+                                {searchQuery ? 'Кураторы не найдены по запросу' : 'Кураторы не найдены'}
                             </Typography>
-                            <Typography variant="body2" sx={{ color: '#ccc' }}>
-                                Добавьте первого куратора для управления объектами
+                            <Typography
+                                variant="body2"
+                                sx={{
+                                    color: '#ccc',
+                                    fontSize: isMobile ? '0.85rem' : undefined
+                                }}
+                            >
+                                {searchQuery ? 'Попробуйте изменить поисковый запрос' : 'Добавьте первого куратора для управления объектами'}
                             </Typography>
                         </CardContent>
                     </Card>
                 )}
             </Box>
+
+            {/* FAB кнопка для мобильной версии */}
+            {isMobile && (
+                <Fab
+                    color="primary"
+                    aria-label="add curator"
+                    onClick={() => setAddDialogOpen(true)}
+                    sx={{
+                        position: 'fixed',
+                        bottom: 16,
+                        right: 16,
+                        backgroundColor: '#D4AF37',
+                        color: '#000000',
+                        '&:hover': {
+                            backgroundColor: '#B8941F'
+                        },
+                        zIndex: 1000,
+                        '& .MuiSvgIcon-root': {
+                            fontSize: '1.5rem'
+                        }
+                    }}
+                >
+                    <AddIcon />
+                </Fab>
+            )}
 
             {/* Диалог добавления куратора */}
             <Dialog open={addDialogOpen} onClose={() => setAddDialogOpen(false)} maxWidth="sm" fullWidth>
@@ -516,14 +703,16 @@ const CuratorManagement = () => {
                         onChange={(e) => setNewCurator(prev => ({ ...prev, firstName: e.target.value }))}
                         margin="normal"
                         required
+                        sx={textFieldStyles}
                     />
                     <TextField
                         fullWidth
                         label="Фамилия"
                         value={newCurator.lastName}
-                        onChange={(e) => setNewCurator(prev => ({ ...prev, lastName: e.target.value }))}
+                        onChange={(e) => handleLastNameChange(e.target.value)}
                         margin="normal"
                         required
+                        sx={textFieldStyles}
                     />
                     <TextField
                         fullWidth
@@ -533,6 +722,18 @@ const CuratorManagement = () => {
                         onChange={(e) => setNewCurator(prev => ({ ...prev, email: e.target.value }))}
                         margin="normal"
                         required
+                        sx={textFieldStyles}
+                    />
+                    <TextField
+                        fullWidth
+                        label="Номер телефона"
+                        type="tel"
+                        value={newCurator.phone}
+                        onChange={(e) => setNewCurator(prev => ({ ...prev, phone: e.target.value }))}
+                        margin="normal"
+                        required
+                        placeholder="+7 (999) 123-45-67"
+                        sx={textFieldStyles}
                     />
                 </DialogContent>
                 <DialogActions>
@@ -724,6 +925,7 @@ const CuratorManagement = () => {
                                 }}
                                 variant="outlined"
                                 fullWidth
+                                sx={textFieldStyles}
                             />
                             <IconButton onClick={() => copyToClipboard(createdCredentials.email)}>
                                 <ContentCopyIcon />
@@ -737,6 +939,7 @@ const CuratorManagement = () => {
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <TextField
                                 value={createdCredentials.password}
+                                sx={textFieldStyles}
                                 InputProps={{
                                     readOnly: true,
                                     sx: { background: 'transparent', fontFamily: 'monospace', p: 1, borderRadius: 1 }
@@ -789,6 +992,7 @@ const CuratorManagement = () => {
                             labelId="curator-status-label"
                             value={newStatus}
                             label="Статус"
+                            disabled={updatingStatus}
                             onChange={e => setNewStatus(e.target.value)}
                         >
                             <MenuItem value="working">Работает</MenuItem>
@@ -801,6 +1005,7 @@ const CuratorManagement = () => {
                 <DialogActions>
                     <Button
                         onClick={() => setStatusDialogOpen(false)}
+                        disabled={updatingStatus}
                         sx={{
                             color: '#F44336',
                             '&:hover': {
@@ -812,12 +1017,26 @@ const CuratorManagement = () => {
                     </Button>
                     <Button
                         variant="contained"
+                        disabled={updatingStatus}
                         onClick={async () => {
                             if (statusCurator) {
-                                await updateCuratorStatus(statusCurator.uid, newStatus as import('../../types').InspectorStatus);
-                                setStatusDialogOpen(false);
-                                setStatusCurator(null);
-                                await loadData();
+                                try {
+                                    setUpdatingStatus(true);
+                                    await updateCuratorStatus(statusCurator.uid, newStatus as import('../../types').InspectorStatus);
+
+                                    // Обновляем кэш и список кураторов
+                                    cacheManager.clearCache('curators');
+                                    await loadData();
+
+                                    setStatusDialogOpen(false);
+                                    setStatusCurator(null);
+                                    showSnackbar('Статус куратора обновлен', 'success');
+                                } catch (error) {
+                                    console.error('Ошибка обновления статуса куратора:', error);
+                                    showSnackbar('Ошибка при обновлении статуса куратора', 'error');
+                                } finally {
+                                    setUpdatingStatus(false);
+                                }
                             }
                         }}
                         sx={{
@@ -827,7 +1046,14 @@ const CuratorManagement = () => {
                             }
                         }}
                     >
-                        Сохранить
+                        {updatingStatus ? (
+                            <>
+                                <CircularProgress size={18} sx={{ mr: 1, color: 'white' }} />
+                                Обновление...
+                            </>
+                        ) : (
+                            'Сохранить'
+                        )}
                     </Button>
                 </DialogActions>
             </Dialog>
@@ -845,6 +1071,14 @@ const CuratorManagement = () => {
                 <DialogContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 4 }}>
                     <CircularProgress color="primary" sx={{ mb: 2 }} />
                     <Typography sx={{ color: 'white' }}>Идет процесс удаления куратора...</Typography>
+                </DialogContent>
+            </Dialog>
+
+            {/* Диалог изменения статуса (эффект загрузки) */}
+            <Dialog open={updatingStatus} PaperProps={{ sx: { background: 'rgba(20,20,40,0.95)', boxShadow: 0 } }}>
+                <DialogContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 4 }}>
+                    <CircularProgress color="primary" sx={{ mb: 2 }} />
+                    <Typography sx={{ color: 'white' }}>Идет изменение статуса куратора...</Typography>
                 </DialogContent>
             </Dialog>
 

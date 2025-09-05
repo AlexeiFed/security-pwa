@@ -6,7 +6,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import AdminMobileHeader from '../common/AdminMobileHeader';
+import Header from '../common/Header';
 import {
     Box,
     Card,
@@ -25,9 +26,11 @@ import {
     OutlinedInput,
     Checkbox,
     ListItemText,
-    IconButton
+    IconButton,
+    useTheme,
+    useMediaQuery
 } from '@mui/material';
-import { ArrowBack as ArrowBackIcon } from '@mui/icons-material';
+
 
 import {
     sendAlarmPushToAll,
@@ -48,8 +51,9 @@ interface PushStats {
 }
 
 const PushNotificationPanel: React.FC = () => {
-    const navigate = useNavigate();
     const { user } = useAuth();
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
     const [serverStatus, setServerStatus] = useState<boolean | null>(null);
     const [stats, setStats] = useState<PushStats | null>(null);
     const [loading, setLoading] = useState(false);
@@ -162,249 +166,213 @@ const PushNotificationPanel: React.FC = () => {
     };
 
     return (
-        <Box sx={{ p: 2 }}>
-            {/* Заголовок страницы */}
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                <IconButton
-                    onClick={() => navigate('/')}
-                    sx={{
-                        mr: 2,
-                        color: colors.secondary.main,
-                        backgroundColor: 'rgba(212, 175, 55, 0.1)',
-                        '&:hover': {
-                            backgroundColor: 'rgba(212, 175, 55, 0.2)',
-                            transform: 'scale(1.1)'
-                        },
-                        transition: 'all 0.3s ease'
-                    }}
-                >
-                    <ArrowBackIcon />
-                </IconButton>
-                <Typography variant="h4" component="h1" sx={{ color: colors.text.primary, fontWeight: 600 }}>
-                    Push-уведомления
+        <Box sx={{
+            minHeight: '100vh',
+            background: 'linear-gradient(135deg, #0A2463 0%, #000 100%)'
+        }}>
+            <Box sx={{ p: { xs: 1, sm: 2, md: 4 } }}>
+
+                <Typography variant="h5" sx={{ mb: 3, color: colors.text.primary }}>
+                    📡 Управление Push-уведомлениями
                 </Typography>
-            </Box>
 
-            <Typography variant="h5" sx={{ mb: 3, color: colors.text.primary }}>
-                📡 Управление Push-уведомлениями
-            </Typography>
-
-            {/* Статус сервера и статистика */}
-            <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
-                <Box sx={{ flex: 1, minWidth: 300 }}>
-                    <Card sx={{
-                        background: `linear-gradient(135deg, ${colors.primary.main} 0%, #000 100%)`,
-                        '&:hover': {
-                            transform: 'none',
-                            boxShadow: 'none'
-                        }
-                    }}>
-                        <CardContent>
-                            <Typography variant="h6" sx={{ color: colors.text.primary, mb: 2 }}>
-                                Статус Push-сервера
-                            </Typography>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                {serverStatus === null ? (
-                                    <CircularProgress size={20} />
-                                ) : serverStatus ? (
-                                    <Chip label="✅ Активен" color="success" />
-                                ) : (
-                                    <Chip label="❌ Недоступен" color="error" />
-                                )}
-                                <Button
-                                    size="small"
-                                    onClick={loadStatusAndStats}
-                                    disabled={loading}
-                                    sx={{
-                                        color: 'white',
-                                        borderColor: 'white',
-                                        '&:hover': {
-                                            borderColor: 'white',
-                                            backgroundColor: 'rgba(255,255,255,0.1)'
-                                        }
-                                    }}
-                                    variant="outlined"
-                                >
-                                    Обновить
-                                </Button>
-                            </Box>
-                        </CardContent>
-                    </Card>
-                </Box>
-
-                <Box sx={{ flex: 1, minWidth: 300 }}>
-                    <Card sx={{
-                        background: `linear-gradient(135deg, ${colors.primary.main} 0%, #000 100%)`,
-                        '&:hover': {
-                            transform: 'none',
-                            boxShadow: 'none'
-                        }
-                    }}>
-                        <CardContent>
-                            <Typography variant="h6" sx={{ color: colors.text.primary, mb: 2 }}>
-                                Статистика подписок
-                            </Typography>
-                            {stats ? (
-                                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                                    <Chip label={`Всего: ${stats.total}`} variant="outlined" />
-                                    <Chip label={`Валидных: ${stats.valid}`} color="success" />
-                                    <Chip label={`Невалидных: ${stats.invalid}`} color="warning" />
-                                </Box>
-                            ) : (
-                                <CircularProgress size={20} />
-                            )}
-                        </CardContent>
-                    </Card>
-                </Box>
-            </Box>
-
-
-
-            {/* Отправка по ролям */}
-            <Card sx={{
-                background: `linear-gradient(135deg, ${colors.primary.main} 0%, #000 100%)`,
-                '&:hover': {
-                    transform: 'none',
-                    boxShadow: 'none'
-                }
-            }}>
-                <CardContent>
-                    <Typography variant="h6" sx={{ color: colors.text.primary, mb: 2 }}>
-                        🚨 Тревожное уведомление выбранным ролям
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: colors.text.secondary, mb: 2 }}>
-                        Создаст тревогу в системе и отправит push-уведомление только выбранным ролям. Воспроизведет звук тревоги и покажет красный экран.
-                    </Typography>
-
-                    <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
-                        <Box sx={{ flex: 1, minWidth: 200 }}>
-                            <FormControl fullWidth>
-                                <InputLabel>Роли</InputLabel>
-                                <Select
-                                    multiple
-                                    value={selectedRoles}
-                                    onChange={handleRoleChange}
-                                    input={<OutlinedInput label="Роли" />}
-                                    renderValue={(selected) => (
-                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                                            {selected.map((value) => (
-                                                <Chip
-                                                    key={value}
-                                                    label={value === 'curator' ? 'Кураторы' : 'Инспекторы'}
-                                                    size="small"
-                                                />
-                                            ))}
-                                        </Box>
+                {/* Статус сервера и статистика */}
+                <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+                    <Box sx={{ flex: 1, minWidth: 300 }}>
+                        <Card sx={{
+                            background: `linear-gradient(135deg, ${colors.primary.main} 0%, #000 100%)`,
+                            '&:hover': {
+                                transform: 'none',
+                                boxShadow: 'none'
+                            }
+                        }}>
+                            <CardContent>
+                                <Typography variant="h6" sx={{ color: colors.text.primary, mb: 2 }}>
+                                    Статус Push-сервера
+                                </Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    {serverStatus === null ? (
+                                        <CircularProgress size={20} />
+                                    ) : serverStatus ? (
+                                        <Chip label="✅ Активен" color="success" />
+                                    ) : (
+                                        <Chip label="❌ Недоступен" color="error" />
                                     )}
-                                >
-                                    <MenuItem value="curator">
-                                        <Checkbox checked={selectedRoles.indexOf('curator') > -1} />
-                                        <ListItemText primary="Кураторы" />
-                                    </MenuItem>
-                                    <MenuItem value="inspector">
-                                        <Checkbox checked={selectedRoles.indexOf('inspector') > -1} />
-                                        <ListItemText primary="Инспекторы" />
-                                    </MenuItem>
-                                </Select>
-                            </FormControl>
-                        </Box>
+                                    <Button
+                                        size="small"
+                                        onClick={loadStatusAndStats}
+                                        disabled={loading}
+                                        sx={{
+                                            color: 'white',
+                                            borderColor: 'white',
+                                            '&:hover': {
+                                                borderColor: 'white',
+                                                backgroundColor: 'rgba(255,255,255,0.1)'
+                                            }
+                                        }}
+                                        variant="outlined"
+                                    >
+                                        Обновить
+                                    </Button>
+                                </Box>
+                            </CardContent>
+                        </Card>
                     </Box>
 
-                    {/* Выбор объекта */}
-                    <Box sx={{ mb: 2 }}>
-                        <Button
-                            variant="outlined"
-                            color="primary"
-                            onClick={() => setShowObjectSelector(true)}
-                            sx={{
-                                mb: 1,
-                                color: 'white',
-                                borderColor: 'white',
-                                '&:hover': {
+                    <Box sx={{ flex: 1, minWidth: 300 }}>
+                        <Card sx={{
+                            background: `linear-gradient(135deg, ${colors.primary.main} 0%, #000 100%)`,
+                            '&:hover': {
+                                transform: 'none',
+                                boxShadow: 'none'
+                            }
+                        }}>
+                            <CardContent>
+                                <Typography variant="h6" sx={{ color: colors.text.primary, mb: 2 }}>
+                                    Статистика подписок
+                                </Typography>
+                                {stats ? (
+                                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                        <Chip label={`Всего: ${stats.total}`} variant="outlined" />
+                                        <Chip label={`Валидных: ${stats.valid}`} color="success" />
+                                        <Chip label={`Невалидных: ${stats.invalid}`} color="warning" />
+                                    </Box>
+                                ) : (
+                                    <CircularProgress size={20} />
+                                )}
+                            </CardContent>
+                        </Card>
+                    </Box>
+                </Box>
+
+
+
+                {/* Отправка по ролям */}
+                <Card sx={{
+                    background: `linear-gradient(135deg, ${colors.primary.main} 0%, #000 100%)`,
+                    '&:hover': {
+                        transform: 'none',
+                        boxShadow: 'none'
+                    }
+                }}>
+                    <CardContent>
+                        <Typography variant="h6" sx={{ color: colors.text.primary, mb: 2 }}>
+                            🚨 Тревожное уведомление выбранным ролям
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: colors.text.secondary, mb: 2 }}>
+                            Создаст тревогу в системе и отправит push-уведомление только выбранным ролям. Воспроизведет звук тревоги и покажет красный экран.
+                        </Typography>
+
+                        <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+                            <Box sx={{ flex: 1, minWidth: 200 }}>
+                                <FormControl fullWidth>
+                                    <InputLabel>Роли</InputLabel>
+                                    <Select
+                                        multiple
+                                        value={selectedRoles}
+                                        onChange={handleRoleChange}
+                                        input={<OutlinedInput label="Роли" />}
+                                        renderValue={(selected) => (
+                                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                                {selected.map((value) => (
+                                                    <Chip
+                                                        key={value}
+                                                        label={value === 'curator' ? 'Кураторы' : 'Инспекторы'}
+                                                        size="small"
+                                                    />
+                                                ))}
+                                            </Box>
+                                        )}
+                                    >
+                                        <MenuItem value="curator">
+                                            <Checkbox checked={selectedRoles.indexOf('curator') > -1} />
+                                            <ListItemText primary="Кураторы" />
+                                        </MenuItem>
+                                        <MenuItem value="inspector">
+                                            <Checkbox checked={selectedRoles.indexOf('inspector') > -1} />
+                                            <ListItemText primary="Инспекторы" />
+                                        </MenuItem>
+                                    </Select>
+                                </FormControl>
+                            </Box>
+                        </Box>
+
+                        {/* Выбор объекта */}
+                        <Box sx={{ mb: 2 }}>
+                            <Button
+                                variant="outlined"
+                                color="primary"
+                                onClick={() => setShowObjectSelector(true)}
+                                sx={{
+                                    mb: 1,
+                                    color: 'white',
                                     borderColor: 'white',
-                                    backgroundColor: 'rgba(255,255,255,0.1)'
+                                    '&:hover': {
+                                        borderColor: 'white',
+                                        backgroundColor: 'rgba(255,255,255,0.1)'
+                                    }
+                                }}
+                            >
+                                {selectedObject ? `Выбран объект: ${selectedObject.name}` : 'Выбрать объект тревоги'}
+                            </Button>
+                            {selectedObject && (
+                                <Chip
+                                    label={`Объект: ${selectedObject.name}`}
+                                    color="primary"
+                                    onDelete={() => setSelectedObject(null)}
+                                    sx={{ ml: 1 }}
+                                />
+                            )}
+                        </Box>
+
+                        <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+                            <Box sx={{ flex: 1, minWidth: 200 }}>
+                                <TextField
+                                    fullWidth
+                                    label="Заголовок (необязательно)"
+                                    value={customTitle}
+                                    onChange={(e) => setCustomTitle(e.target.value)}
+                                    placeholder="🚨 ТРЕВОГА!"
+                                />
+                            </Box>
+                            <Box sx={{ flex: 1, minWidth: 200 }}>
+                                <TextField
+                                    fullWidth
+                                    label="Сообщение (необязательно)"
+                                    value={customBody}
+                                    onChange={(e) => setCustomBody(e.target.value)}
+                                    placeholder="Обнаружена угроза безопасности!"
+                                />
+                            </Box>
+                        </Box>
+
+                        <Button
+                            variant="contained"
+                            onClick={handleSendByRoles}
+                            disabled={loading || !serverStatus || selectedRoles.length === 0}
+                            startIcon={loading ? <CircularProgress size={16} /> : null}
+                            sx={{
+                                backgroundColor: '#F44336',
+                                '&:hover': {
+                                    backgroundColor: '#D32F2F'
+                                },
+                                '&:disabled': {
+                                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                    color: 'rgba(255, 255, 255, 0.3)'
                                 }
                             }}
                         >
-                            {selectedObject ? `Выбран объект: ${selectedObject.name}` : 'Выбрать объект тревоги'}
+                            Активировать тревогу для ролей ({selectedRoles.length})
                         </Button>
-                        {selectedObject && (
-                            <Chip
-                                label={`Объект: ${selectedObject.name}`}
-                                color="primary"
-                                onDelete={() => setSelectedObject(null)}
-                                sx={{ ml: 1 }}
-                            />
-                        )}
-                    </Box>
+                    </CardContent>
+                </Card>
 
-                    <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
-                        <Box sx={{ flex: 1, minWidth: 200 }}>
-                            <TextField
-                                fullWidth
-                                label="Заголовок (необязательно)"
-                                value={customTitle}
-                                onChange={(e) => setCustomTitle(e.target.value)}
-                                placeholder="🚨 ТРЕВОГА!"
-                            />
-                        </Box>
-                        <Box sx={{ flex: 1, minWidth: 200 }}>
-                            <TextField
-                                fullWidth
-                                label="Сообщение (необязательно)"
-                                value={customBody}
-                                onChange={(e) => setCustomBody(e.target.value)}
-                                placeholder="Обнаружена угроза безопасности!"
-                            />
-                        </Box>
-                    </Box>
-
-                    <Button
-                        variant="contained"
-                        onClick={handleSendByRoles}
-                        disabled={loading || !serverStatus || selectedRoles.length === 0}
-                        startIcon={loading ? <CircularProgress size={16} /> : null}
-                        sx={{
-                            backgroundColor: '#F44336',
-                            '&:hover': {
-                                backgroundColor: '#D32F2F'
-                            },
-                            '&:disabled': {
-                                backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                                color: 'rgba(255, 255, 255, 0.3)'
-                            }
-                        }}
-                    >
-                        Активировать тревогу для ролей ({selectedRoles.length})
-                    </Button>
-                </CardContent>
-            </Card>
-
-            {/* Результат отправки */}
-            {result && (
-                <Box sx={{ mt: 3 }}>
-                    <Alert
-                        severity={result.success ? 'success' : 'error'}
-                        sx={{ mb: 2 }}
-                        action={
-                            <Button
-                                color="inherit"
-                                size="small"
-                                onClick={() => setResult(null)}
-                                sx={{ color: 'white' }}
-                            >
-                                Скрыть
-                            </Button>
-                        }
-                    >
-                        <Typography sx={{ color: 'white' }}>
-                            {result.message}
-                        </Typography>
-                    </Alert>
-
-                    {result.errors && result.errors.length > 0 && (
+                {/* Результат отправки */}
+                {result && (
+                    <Box sx={{ mt: 3 }}>
                         <Alert
-                            severity="warning"
+                            severity={result.success ? 'success' : 'error'}
+                            sx={{ mb: 2 }}
                             action={
                                 <Button
                                     color="inherit"
@@ -416,25 +384,45 @@ const PushNotificationPanel: React.FC = () => {
                                 </Button>
                             }
                         >
-                            <Typography variant="body2">
-                                Детали ошибок:
+                            <Typography sx={{ color: 'white' }}>
+                                {result.message}
                             </Typography>
-                            <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
-                                {result.errors.map((error, index) => (
-                                    <li key={index}>{error}</li>
-                                ))}
-                            </ul>
                         </Alert>
-                    )}
-                </Box>
-            )}
 
-            {/* Диалог выбора объекта */}
-            <AlarmObjectSelector
-                open={showObjectSelector}
-                onClose={() => setShowObjectSelector(false)}
-                onConfirm={handleObjectSelect}
-            />
+                        {result.errors && result.errors.length > 0 && (
+                            <Alert
+                                severity="warning"
+                                action={
+                                    <Button
+                                        color="inherit"
+                                        size="small"
+                                        onClick={() => setResult(null)}
+                                        sx={{ color: 'white' }}
+                                    >
+                                        Скрыть
+                                    </Button>
+                                }
+                            >
+                                <Typography variant="body2">
+                                    Детали ошибок:
+                                </Typography>
+                                <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
+                                    {result.errors.map((error, index) => (
+                                        <li key={index}>{error}</li>
+                                    ))}
+                                </ul>
+                            </Alert>
+                        )}
+                    </Box>
+                )}
+
+                {/* Диалог выбора объекта */}
+                <AlarmObjectSelector
+                    open={showObjectSelector}
+                    onClose={() => setShowObjectSelector(false)}
+                    onConfirm={handleObjectSelect}
+                />
+            </Box>
         </Box>
     );
 };

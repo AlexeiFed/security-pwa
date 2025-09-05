@@ -25,7 +25,9 @@ import {
     FormControl,
     InputLabel,
     Select,
-    MenuItem
+    MenuItem,
+    useTheme,
+    useMediaQuery
 } from '@mui/material';
 import {
     ArrowBack as ArrowBackIcon,
@@ -80,6 +82,8 @@ function TabPanel(props: TabPanelProps) {
 const InspectorProfile = () => {
     const { uid } = useParams<{ uid: string }>();
     const navigate = useNavigate();
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
     const [inspector, setInspector] = useState<Inspector | null>(null);
     const [inspectorTasks, setInspectorTasks] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -398,9 +402,12 @@ const InspectorProfile = () => {
     }
 
     return (
-        <Box sx={{ p: 3 }}>
+        <Box sx={{
+            p: 3,
+            pt: isMobile ? 10 : { xs: 12, sm: 16 }
+        }}>
             {/* Заголовок страницы */}
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: isMobile ? 2 : 3 }}>
                 <IconButton
                     onClick={() => navigate('/admin/inspectors')}
                     sx={{
@@ -416,7 +423,15 @@ const InspectorProfile = () => {
                 >
                     <ArrowBackIcon />
                 </IconButton>
-                <Typography variant="h4" component="h1" sx={{ color: colors.text.primary, fontWeight: 600 }}>
+                <Typography
+                    variant={isMobile ? "h5" : "h4"}
+                    component="h1"
+                    sx={{
+                        color: colors.text.primary,
+                        fontWeight: 600,
+                        fontSize: isMobile ? '1.25rem' : undefined
+                    }}
+                >
                     Профиль инспектора
                 </Typography>
             </Box>
@@ -605,28 +620,55 @@ const InspectorProfile = () => {
                             </>
                         )}
                         <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-                            <Button
-                                variant="contained"
-                                startIcon={<WhatsAppIcon />}
-                                onClick={handleSendViaWhatsApp}
-                                sx={{
-                                    backgroundColor: '#25D366',
-                                    '&:hover': { backgroundColor: '#128C7E' }
-                                }}
-                            >
-                                Отправить в WhatsApp
-                            </Button>
-                            <Button
-                                variant="contained"
-                                startIcon={<TelegramIcon />}
-                                onClick={handleSendViaTelegram}
-                                sx={{
-                                    backgroundColor: '#0088cc',
-                                    '&:hover': { backgroundColor: '#006699' }
-                                }}
-                            >
-                                Отправить в Telegram
-                            </Button>
+                            {isMobile ? (
+                                <>
+                                    <IconButton
+                                        onClick={handleSendViaWhatsApp}
+                                        sx={{
+                                            backgroundColor: '#25D366',
+                                            color: '#fff',
+                                            '&:hover': { backgroundColor: '#128C7E' }
+                                        }}
+                                    >
+                                        <WhatsAppIcon />
+                                    </IconButton>
+                                    <IconButton
+                                        onClick={handleSendViaTelegram}
+                                        sx={{
+                                            backgroundColor: '#0088cc',
+                                            color: '#fff',
+                                            '&:hover': { backgroundColor: '#006699' }
+                                        }}
+                                    >
+                                        <TelegramIcon />
+                                    </IconButton>
+                                </>
+                            ) : (
+                                <>
+                                    <Button
+                                        variant="contained"
+                                        startIcon={<WhatsAppIcon />}
+                                        onClick={handleSendViaWhatsApp}
+                                        sx={{
+                                            backgroundColor: '#25D366',
+                                            '&:hover': { backgroundColor: '#128C7E' }
+                                        }}
+                                    >
+                                        Отправить в WhatsApp
+                                    </Button>
+                                    <Button
+                                        variant="contained"
+                                        startIcon={<TelegramIcon />}
+                                        onClick={handleSendViaTelegram}
+                                        sx={{
+                                            backgroundColor: '#0088cc',
+                                            '&:hover': { backgroundColor: '#006699' }
+                                        }}
+                                    >
+                                        Отправить в Telegram
+                                    </Button>
+                                </>
+                            )}
                         </Box>
                     </Box>
                 )}
@@ -705,6 +747,9 @@ const InspectorProfile = () => {
                         sx={{
                             '& .MuiTab-root': {
                                 color: 'rgba(255, 255, 255, 0.7)',
+                                fontSize: isMobile ? '0.8rem' : undefined,
+                                minHeight: isMobile ? 40 : undefined,
+                                padding: isMobile ? '6px 12px' : undefined,
                                 '&.Mui-selected': {
                                     color: '#D4AF37'
                                 }
@@ -715,12 +760,12 @@ const InspectorProfile = () => {
                         }}
                     >
                         <Tab
-                            label={`Текущие задания (${currentTasks.length})`}
+                            label={isMobile ? `Текущие (${currentTasks.length})` : `Текущие задания (${currentTasks.length})`}
                             id="inspector-tab-0"
                             aria-controls="inspector-tabpanel-0"
                         />
                         <Tab
-                            label={`Выполненные задания (${completedTasks.length})`}
+                            label={isMobile ? `Выполненные (${completedTasks.length})` : `Выполненные задания (${completedTasks.length})`}
                             id="inspector-tab-1"
                             aria-controls="inspector-tabpanel-1"
                         />
@@ -741,28 +786,60 @@ const InspectorProfile = () => {
                                         border: '2px solid rgba(255, 255, 255, 0.3)',
                                         borderRadius: 2,
                                         mb: 2,
-                                        background: 'rgba(255, 255, 255, 0.05)'
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        p: isMobile ? 1 : 2
                                     }}>
-                                        <ListItemIcon>
-                                            {getTaskStatusIcon(task.status)}
-                                        </ListItemIcon>
+                                        {/* Статус только для десктопа */}
+                                        {!isMobile && task.status === 'completed' && (
+                                            <Chip
+                                                label="Выполнено"
+                                                color="success"
+                                                size="small"
+                                                sx={{
+                                                    position: 'absolute',
+                                                    top: 8,
+                                                    right: 8,
+                                                    fontWeight: 600,
+                                                    fontSize: '0.7rem',
+                                                    '& .MuiChip-label': {
+                                                        color: '#ffffff'
+                                                    }
+                                                }}
+                                            />
+                                        )}
+                                        {/* Иконка статуса только для десктопа */}
+                                        {!isMobile && (
+                                            <ListItemIcon>
+                                                {getTaskStatusIcon(task.status)}
+                                            </ListItemIcon>
+                                        )}
                                         <ListItemText
                                             primary={
                                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                    <Typography variant="h6" sx={{ color: '#ffffff' }}>
+                                                    <Typography
+                                                        variant={isMobile ? "body1" : "h6"}
+                                                        sx={{
+                                                            color: '#ffffff',
+                                                            fontSize: isMobile ? '0.9rem' : undefined,
+                                                            fontWeight: isMobile ? 500 : 600
+                                                        }}
+                                                    >
                                                         {task.title}
                                                     </Typography>
-                                                    <Chip
-                                                        label={getTaskStatusText(task.status)}
-                                                        color={getTaskStatusColor(task.status) as any}
-                                                        size="small"
-                                                        sx={{
-                                                            fontWeight: 600,
-                                                            '& .MuiChip-label': {
-                                                                color: '#ffffff'
-                                                            }
-                                                        }}
-                                                    />
+                                                    {/* Статус только для десктопа */}
+                                                    {!isMobile && (
+                                                        <Chip
+                                                            label={getTaskStatusText(task.status)}
+                                                            color={getTaskStatusColor(task.status) as any}
+                                                            size="small"
+                                                            sx={{
+                                                                fontWeight: 600,
+                                                                '& .MuiChip-label': {
+                                                                    color: '#ffffff'
+                                                                }
+                                                            }}
+                                                        />
+                                                    )}
                                                 </Box>
                                             }
                                             secondary={
@@ -779,7 +856,13 @@ const InspectorProfile = () => {
                                                         </Box>
                                                     </Box>
                                                     {task.acceptedAt && (
-                                                        <Typography variant="body2" color="success.main">
+                                                        <Typography
+                                                            variant="body2"
+                                                            color="success.main"
+                                                            sx={{
+                                                                fontSize: isMobile ? '0.7rem' : undefined
+                                                            }}
+                                                        >
                                                             ✅ Принято к выполнению: {task.acceptedAt.toLocaleString('ru-RU')}
                                                         </Typography>
                                                     )}
@@ -811,42 +894,64 @@ const InspectorProfile = () => {
                                                                                 border: '1px solid rgba(255, 255, 255, 0.2)',
                                                                                 borderRadius: 1,
                                                                                 mb: 1,
-                                                                                background: 'rgba(255, 255, 255, 0.03)'
+                                                                                background: 'rgba(255, 255, 255, 0.03)',
+                                                                                p: isMobile ? 1 : 2
                                                                             }}>
-                                                                                <ListItemIcon>
-                                                                                    <LocationIcon fontSize="small" sx={{ color: '#ffffff' }} />
-                                                                                </ListItemIcon>
+                                                                                {!isMobile && (
+                                                                                    <ListItemIcon>
+                                                                                        <LocationIcon fontSize="small" sx={{ color: '#ffffff' }} />
+                                                                                    </ListItemIcon>
+                                                                                )}
                                                                                 <Box sx={{ width: '100%' }}>
                                                                                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                                                        <Typography component="span" sx={{ fontWeight: 500, color: '#ffffff' }}>
+                                                                                        <Typography component="span" sx={{
+                                                                                            fontWeight: 500,
+                                                                                            color: '#ffffff',
+                                                                                            fontSize: isMobile ? '0.875rem' : undefined
+                                                                                        }}>
                                                                                             {obj.name || obj.address}
                                                                                         </Typography>
-                                                                                        {obj.status === 'checked' ? (
-                                                                                            <Chip label="Проверен" color="success" size="small" sx={{
-                                                                                                fontWeight: 600,
-                                                                                                '& .MuiChip-label': {
-                                                                                                    color: '#ffffff'
-                                                                                                }
-                                                                                            }} />
-                                                                                        ) : (
-                                                                                            <Chip label="Ожидает" color="warning" size="small" sx={{
-                                                                                                fontWeight: 600,
-                                                                                                '& .MuiChip-label': {
-                                                                                                    color: '#ffffff'
-                                                                                                }
-                                                                                            }} />
+                                                                                        {!isMobile && (
+                                                                                            obj.status === 'checked' ? (
+                                                                                                <Chip label="Проверен" color="success" size="small" sx={{
+                                                                                                    fontWeight: 600,
+                                                                                                    '& .MuiChip-label': {
+                                                                                                        color: '#ffffff'
+                                                                                                    }
+                                                                                                }} />
+                                                                                            ) : (
+                                                                                                <Chip label="Ожидает" color="warning" size="small" sx={{
+                                                                                                    fontWeight: 600,
+                                                                                                    '& .MuiChip-label': {
+                                                                                                        color: '#ffffff'
+                                                                                                    }
+                                                                                                }} />
+                                                                                            )
                                                                                         )}
                                                                                     </Box>
-                                                                                    <Typography variant="body2" component="span" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
+                                                                                    <Typography variant="body2" component="span" sx={{
+                                                                                        color: 'rgba(255, 255, 255, 0.8)',
+                                                                                        fontSize: isMobile ? '0.75rem' : undefined
+                                                                                    }}>
                                                                                         {obj.address}
                                                                                     </Typography>
                                                                                     {obj.status === 'checked' && isValidChecked && (
-                                                                                        <Typography variant="body2" color="success.main" component="span" sx={{ display: 'block', mt: 0.5 }}>
+                                                                                        <Typography variant="body2" color="success.main" component="span" sx={{
+                                                                                            display: 'block',
+                                                                                            mt: 0.5,
+                                                                                            fontSize: isMobile ? '0.7rem' : undefined
+                                                                                        }}>
                                                                                             ✅ Проверен: {checkedDate.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                                                                         </Typography>
                                                                                     )}
                                                                                     {obj.comments && (
-                                                                                        <Typography variant="body2" color="text.secondary" component="span" sx={{ display: 'block', mt: 0.5, fontStyle: 'italic', color: 'rgba(255, 255, 255, 0.7)' }}>
+                                                                                        <Typography variant="body2" component="span" sx={{
+                                                                                            display: 'block',
+                                                                                            mt: 0.5,
+                                                                                            fontStyle: 'italic',
+                                                                                            color: 'rgba(255, 255, 255, 0.7)',
+                                                                                            fontSize: isMobile ? '0.7rem' : undefined
+                                                                                        }}>
                                                                                             Замечания: {obj.comments}
                                                                                         </Typography>
                                                                                     )}
@@ -888,28 +993,40 @@ const InspectorProfile = () => {
                                         border: '2px solid rgba(255, 255, 255, 0.3)',
                                         borderRadius: 2,
                                         mb: 2,
-                                        background: 'rgba(255, 255, 255, 0.05)'
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        p: isMobile ? 1 : 2
                                     }}>
-                                        <ListItemIcon>
-                                            {getTaskStatusIcon(task.status)}
-                                        </ListItemIcon>
+                                        {!isMobile && (
+                                            <ListItemIcon>
+                                                {getTaskStatusIcon(task.status)}
+                                            </ListItemIcon>
+                                        )}
                                         <ListItemText
                                             primary={
                                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                    <Typography variant="h6" sx={{ color: '#ffffff' }}>
+                                                    <Typography
+                                                        variant={isMobile ? "body1" : "h6"}
+                                                        sx={{
+                                                            color: '#ffffff',
+                                                            fontSize: isMobile ? '0.9rem' : undefined,
+                                                            fontWeight: isMobile ? 500 : 600
+                                                        }}
+                                                    >
                                                         {task.title}
                                                     </Typography>
-                                                    <Chip
-                                                        label={getTaskStatusText(task.status)}
-                                                        color={getTaskStatusColor(task.status) as any}
-                                                        size="small"
-                                                        sx={{
-                                                            fontWeight: 600,
-                                                            '& .MuiChip-label': {
-                                                                color: '#ffffff'
-                                                            }
-                                                        }}
-                                                    />
+                                                    {!isMobile && (
+                                                        <Chip
+                                                            label={getTaskStatusText(task.status)}
+                                                            color={getTaskStatusColor(task.status) as any}
+                                                            size="small"
+                                                            sx={{
+                                                                fontWeight: 600,
+                                                                '& .MuiChip-label': {
+                                                                    color: '#ffffff'
+                                                                }
+                                                            }}
+                                                        />
+                                                    )}
                                                 </Box>
                                             }
                                             secondary={
@@ -963,42 +1080,64 @@ const InspectorProfile = () => {
                                                                                 border: '1px solid rgba(255, 255, 255, 0.2)',
                                                                                 borderRadius: 1,
                                                                                 mb: 1,
-                                                                                background: 'rgba(255, 255, 255, 0.03)'
+                                                                                background: 'rgba(255, 255, 255, 0.03)',
+                                                                                p: isMobile ? 1 : 2
                                                                             }}>
-                                                                                <ListItemIcon>
-                                                                                    <LocationIcon fontSize="small" sx={{ color: '#ffffff' }} />
-                                                                                </ListItemIcon>
+                                                                                {!isMobile && (
+                                                                                    <ListItemIcon>
+                                                                                        <LocationIcon fontSize="small" sx={{ color: '#ffffff' }} />
+                                                                                    </ListItemIcon>
+                                                                                )}
                                                                                 <Box sx={{ width: '100%' }}>
                                                                                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                                                        <Typography component="span" sx={{ fontWeight: 500, color: '#ffffff' }}>
+                                                                                        <Typography component="span" sx={{
+                                                                                            fontWeight: 500,
+                                                                                            color: '#ffffff',
+                                                                                            fontSize: isMobile ? '0.875rem' : undefined
+                                                                                        }}>
                                                                                             {obj.name || obj.address}
                                                                                         </Typography>
-                                                                                        {obj.status === 'checked' ? (
-                                                                                            <Chip label="Проверен" color="success" size="small" sx={{
-                                                                                                fontWeight: 600,
-                                                                                                '& .MuiChip-label': {
-                                                                                                    color: '#ffffff'
-                                                                                                }
-                                                                                            }} />
-                                                                                        ) : (
-                                                                                            <Chip label="Ожидает" color="warning" size="small" sx={{
-                                                                                                fontWeight: 600,
-                                                                                                '& .MuiChip-label': {
-                                                                                                    color: '#ffffff'
-                                                                                                }
-                                                                                            }} />
+                                                                                        {!isMobile && (
+                                                                                            obj.status === 'checked' ? (
+                                                                                                <Chip label="Проверен" color="success" size="small" sx={{
+                                                                                                    fontWeight: 600,
+                                                                                                    '& .MuiChip-label': {
+                                                                                                        color: '#ffffff'
+                                                                                                    }
+                                                                                                }} />
+                                                                                            ) : (
+                                                                                                <Chip label="Ожидает" color="warning" size="small" sx={{
+                                                                                                    fontWeight: 600,
+                                                                                                    '& .MuiChip-label': {
+                                                                                                        color: '#ffffff'
+                                                                                                    }
+                                                                                                }} />
+                                                                                            )
                                                                                         )}
                                                                                     </Box>
-                                                                                    <Typography variant="body2" component="span" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
+                                                                                    <Typography variant="body2" component="span" sx={{
+                                                                                        color: 'rgba(255, 255, 255, 0.8)',
+                                                                                        fontSize: isMobile ? '0.75rem' : undefined
+                                                                                    }}>
                                                                                         {obj.address}
                                                                                     </Typography>
                                                                                     {obj.status === 'checked' && isValidChecked && (
-                                                                                        <Typography variant="body2" color="success.main" component="span" sx={{ display: 'block', mt: 0.5 }}>
+                                                                                        <Typography variant="body2" color="success.main" component="span" sx={{
+                                                                                            display: 'block',
+                                                                                            mt: 0.5,
+                                                                                            fontSize: isMobile ? '0.7rem' : undefined
+                                                                                        }}>
                                                                                             ✅ Проверен: {checkedDate.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                                                                         </Typography>
                                                                                     )}
                                                                                     {obj.comments && (
-                                                                                        <Typography variant="body2" color="text.secondary" component="span" sx={{ display: 'block', mt: 0.5, fontStyle: 'italic', color: 'rgba(255, 255, 255, 0.7)' }}>
+                                                                                        <Typography variant="body2" component="span" sx={{
+                                                                                            display: 'block',
+                                                                                            mt: 0.5,
+                                                                                            fontStyle: 'italic',
+                                                                                            color: 'rgba(255, 255, 255, 0.7)',
+                                                                                            fontSize: isMobile ? '0.7rem' : undefined
+                                                                                        }}>
                                                                                             Замечания: {obj.comments}
                                                                                         </Typography>
                                                                                     )}

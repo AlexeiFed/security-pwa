@@ -202,7 +202,7 @@ const CuratorObjectDetail: React.FC = () => {
                     onLogoClick={() => navigate('/curator')}
                 />
 
-                <Box sx={{ p: 3, pb: 1 }}>
+                <Box sx={{ p: 3, pb: 1, pt: { xs: 12, sm: 16 } }}>
                     {/* Заголовок и кнопка назад */}
                     <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
                         <IconButton
@@ -330,7 +330,10 @@ const CuratorObjectDetail: React.FC = () => {
                                                 '&:hover fieldset': { borderColor: 'rgba(255, 255, 255, 0.5)' },
                                                 '&.Mui-focused fieldset': { borderColor: '#D4AF37' },
                                             },
-                                            '& .MuiInputLabel-root': { color: 'rgba(255, 255, 255, 0.7)' },
+                                            '& .MuiInputLabel-root': {
+                                                color: 'rgba(255, 255, 255, 0.9)',
+                                                '&.Mui-focused': { color: '#D4AF37' }
+                                            },
                                             '& .MuiInputBase-input': { color: '#fff' }
                                         }}
                                     />
@@ -346,7 +349,10 @@ const CuratorObjectDetail: React.FC = () => {
                                                 '&:hover fieldset': { borderColor: 'rgba(255, 255, 255, 0.5)' },
                                                 '&.Mui-focused fieldset': { borderColor: '#D4AF37' },
                                             },
-                                            '& .MuiInputLabel-root': { color: 'rgba(255, 255, 255, 0.7)' },
+                                            '& .MuiInputLabel-root': {
+                                                color: 'rgba(255, 255, 255, 0.9)',
+                                                '&.Mui-focused': { color: '#D4AF37' }
+                                            },
                                             '& .MuiInputBase-input': { color: '#fff' }
                                         }}
                                     />

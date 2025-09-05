@@ -6,7 +6,7 @@
  */
 
 // Типы пользователей
-export type UserRole = 'admin' | 'inspector' | 'curator';
+export type UserRole = 'admin' | 'inspector' | 'curator' | 'guard';
 
 export type InspectorStatus = 'working' | 'vacation' | 'sick' | 'business';
 
@@ -15,6 +15,7 @@ export interface User {
     email: string;
     role: UserRole;
     name: string;
+    phone?: string;
     createdAt: Date;
 }
 
@@ -22,6 +23,7 @@ export interface Inspector extends User {
     role: 'inspector';
     status: InspectorStatus;
     tasks?: Task[];
+    password?: string; // Пароль для отображения в профиле
 }
 
 export interface Curator extends User {
@@ -30,10 +32,20 @@ export interface Curator extends User {
     status: InspectorStatus;
     phone: string;
     position?: string; // Должность куратора
+    password?: string; // Пароль для отображения в профиле
 }
 
 export interface Admin extends User {
     role: 'admin';
+}
+
+export interface Guard extends User {
+    role: 'guard';
+    status: InspectorStatus;
+    assignedObject?: string; // ID объекта охраны
+    assignedObjectName?: string; // Название объекта охраны (для отображения)
+    phone?: string; // Контактный телефон
+    password?: string; // Пароль для отображения в профиле
 }
 
 // Типы объектов - унифицированные
@@ -124,7 +136,16 @@ export interface CreateCuratorForm {
     firstName: string;
     lastName: string;
     email: string;
+    phone: string;
     assignedObjects: string[]; // ID объектов для курирования
+}
+
+export interface CreateGuardForm {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone?: string;
+    assignedObject?: string; // Объект охраны (ID объекта)
 }
 
 export interface CreateObjectForm {
@@ -224,11 +245,18 @@ export interface AuthContextType {
     logout: () => Promise<void>;
     updateUserCredentials: (currentPassword: string, newPassword?: string) => Promise<void>;
     getUserData: (uid: string) => Promise<User | null>;
+    localAlarmActivated: boolean;
+    setLocalAlarmActivated: (activated: boolean) => void;
+    localAlarmData: {
+        objectName: string;
+        description: string;
+    } | null;
+    setLocalAlarmData: (data: { objectName: string; description: string } | null) => void;
 }
 
 export interface Alert {
     id?: string;
-    type: 'admin' | 'inspector' | 'curator';
+    type: 'admin' | 'inspector' | 'curator' | 'guard';
     userId: string;
     userName: string;
     objectId?: string;

@@ -7,9 +7,9 @@
 
 import { db } from './firebase';
 import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
-import { ObjectData, Task, Curator, Inspector } from '../types';
+import { ObjectData, Task, Curator, Inspector, Guard } from '../types';
 import { getObjects } from './objects';
-import { getCurators } from './auth';
+import { getCurators, getGuards } from './auth';
 import { getInspectors } from './auth';
 
 // Константы для localStorage
@@ -22,11 +22,13 @@ interface AppCache {
     tasks: Task[];
     curators: Curator[];
     inspectors: Inspector[];
+    guards: Guard[];
     lastUpdated: {
         objects: number;
         tasks: number;
         curators: number;
         inspectors: number;
+        guards: number;
     };
 }
 
@@ -40,11 +42,13 @@ class CacheManager {
         tasks: [],
         curators: [],
         inspectors: [],
+        guards: [],
         lastUpdated: {
             objects: 0,
             tasks: 0,
             curators: 0,
             inspectors: 0,
+            guards: 0,
         }
     };
 
@@ -56,11 +60,13 @@ class CacheManager {
         tasks: (() => void) | null;
         curators: (() => void) | null;
         inspectors: (() => void) | null;
+        guards: (() => void) | null;
     } = {
             objects: null,
             tasks: null,
             curators: null,
-            inspectors: null
+            inspectors: null,
+            guards: null
         };
 
     // Инициализация кэша из localStorage
@@ -183,6 +189,23 @@ class CacheManager {
         this.cache.lastUpdated.inspectors = Date.now();
         this.saveToStorage();
         return inspectors;
+    }
+
+    // Получение охранников с кэшированием
+    async getGuards(): Promise<Guard[]> {
+        await this.initializeCache();
+
+        if (this.isCacheValid('guards') && this.cache.guards.length > 0) {
+            console.log('📦 Возвращаем охранников из кэша');
+            return this.cache.guards;
+        }
+
+        console.log('🔄 Загружаем охранников из Firebase');
+        const guards = await getGuards();
+        this.cache.guards = guards;
+        this.cache.lastUpdated.guards = Date.now();
+        this.saveToStorage();
+        return guards;
     }
 
     // Подписка на задания с кэшированием
@@ -456,6 +479,7 @@ class CacheManager {
         objects: ObjectData[];
         curators: Curator[];
         inspectors: Inspector[];
+        guards: Guard[];
     }> {
         console.log('🚀 Начинаем предзагрузку всех данных...');
         const startTime = Date.now();
@@ -464,20 +488,22 @@ class CacheManager {
             await this.initializeCache();
 
             // Загружаем все данные параллельно
-            const [objects, curators, inspectors] = await Promise.all([
+            const [objects, curators, inspectors, guards] = await Promise.all([
                 this.getObjects(),
                 this.getCurators(),
-                this.getInspectors()
+                this.getInspectors(),
+                this.getGuards()
             ]);
 
             const loadTime = Date.now() - startTime;
             console.log(`✅ Предзагрузка завершена за ${loadTime}ms:`, {
                 objects: objects.length,
                 curators: curators.length,
-                inspectors: inspectors.length
+                inspectors: inspectors.length,
+                guards: guards.length
             });
 
-            return { objects, curators, inspectors };
+            return { objects, curators, inspectors, guards };
         } catch (error) {
             console.error('❌ Ошибка предзагрузки данных:', error);
             throw error;
@@ -496,11 +522,13 @@ class CacheManager {
                 tasks: [],
                 curators: [],
                 inspectors: [],
+                guards: [],
                 lastUpdated: {
                     objects: 0,
                     tasks: 0,
                     curators: 0,
                     inspectors: 0,
+                    guards: 0,
                 }
             };
             console.log('🗑️ Очищен весь кэш');
@@ -532,7 +560,8 @@ class CacheManager {
             objects: null,
             tasks: null,
             curators: null,
-            inspectors: null
+            inspectors: null,
+            guards: null
         };
         console.log('🔌 Отписаны от всех слушателей');
     }

@@ -70,7 +70,12 @@ const InspectorTasks: React.FC = () => {
         if (user?.uid) {
             setLoading(true);
             const unsubscribe = cacheManager.subscribeToTasks(user.uid, (data: Task[]) => {
-                setTasks(data.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
+                setTasks(data.sort((a, b) => {
+                    // Безопасное преобразование дат
+                    const dateA = a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt);
+                    const dateB = b.createdAt instanceof Date ? b.createdAt : new Date(b.createdAt);
+                    return dateB.getTime() - dateA.getTime();
+                }));
                 setLoading(false);
             });
             return () => unsubscribe();
@@ -93,12 +98,20 @@ const InspectorTasks: React.FC = () => {
     if (filterStartDate) {
         const start = new Date(filterStartDate);
         start.setHours(0, 0, 0, 0);
-        completedTasks = completedTasks.filter(task => task.completedAt && task.completedAt >= start);
+        completedTasks = completedTasks.filter(task => {
+            if (!task.completedAt) return false;
+            const completedAt = task.completedAt instanceof Date ? task.completedAt : new Date(task.completedAt);
+            return completedAt >= start;
+        });
     }
     if (filterEndDate) {
         const end = new Date(filterEndDate);
         end.setHours(23, 59, 59, 999);
-        completedTasks = completedTasks.filter(task => task.completedAt && task.completedAt <= end);
+        completedTasks = completedTasks.filter(task => {
+            if (!task.completedAt) return false;
+            const completedAt = task.completedAt instanceof Date ? task.completedAt : new Date(task.completedAt);
+            return completedAt <= end;
+        });
     }
 
     const getTaskStatusIcon = (status: string) => {
@@ -142,7 +155,11 @@ const InspectorTasks: React.FC = () => {
     };
 
     return (
-        <Box sx={{ p: { xs: 1, sm: 3 } }}>
+        <Box sx={{
+            p: { xs: 1, sm: 3 },
+            minHeight: '100vh',
+            boxSizing: 'border-box'
+        }}>
             <Typography variant={isMobile ? 'h6' : 'h4'} sx={{ mb: { xs: 1, sm: 3 } }}>
                 Мои задания
             </Typography>
@@ -153,6 +170,8 @@ const InspectorTasks: React.FC = () => {
                 color: '#fff',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
                 p: { xs: 1, sm: 2 },
+                maxHeight: 'calc(100vh - 200px)',
+                overflow: 'auto',
                 transition: 'none !important',
                 '&:hover': {
                     transform: 'none !important',

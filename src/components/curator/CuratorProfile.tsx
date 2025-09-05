@@ -1,6 +1,6 @@
 /**
  * @file: CuratorProfile.tsx
- * @description: Компонент профиля куратора
+ * @description: Профиль куратора с управлением учетными данными
  * @dependencies: react, material-ui, auth context
  * @created: 2025-07-20
  */
@@ -8,311 +8,456 @@
 import React, { useState, useEffect } from 'react';
 import {
     Box,
+    Typography,
     Card,
     CardContent,
-    Typography,
     TextField,
     Button,
-    Avatar,
-    Chip,
-    Divider,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
     Alert,
     Snackbar,
+    IconButton,
+    InputAdornment,
+    useMediaQuery,
     CircularProgress
 } from '@mui/material';
 import {
-    Person as PersonIcon,
-    Email as EmailIcon,
-    Phone as PhoneIcon,
-    Business as BusinessIcon,
-    Edit as EditIcon,
-    Save as SaveIcon,
-    Cancel as CancelIcon
+    Visibility as VisibilityIcon,
+    VisibilityOff as VisibilityOffIcon,
+    Delete as DeleteIcon,
+    Edit as EditIcon
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
-import { Curator } from '../../types';
-import { getCuratorById, updateCuratorProfile } from '../../services/auth';
+import { colors } from '../../utils/colors';
+import { getCuratorById, getCuratorCredentials } from '../../services/auth';
+import { updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
+import { auth } from '../../services/firebase';
+
 
 const CuratorProfile: React.FC = () => {
-    const { user } = useAuth();
-    const [curator, setCurator] = useState<Curator | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [editing, setEditing] = useState(false);
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
-        open: false,
-        message: '',
-        severity: 'success'
-    });
+    const { user, logout } = useAuth();
+    const isMobile = useMediaQuery('(max-width:600px)');
 
-    // Форма для редактирования
+    const [showPassword, setShowPassword] = useState(false);
+    const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+    const [showNewPassword, setShowNewPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [changePasswordDialogOpen, setChangePasswordDialogOpen] = useState(false);
+
     const [formData, setFormData] = useState({
-        name: '',
-        email: '',
-        phone: '',
-        position: ''
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
     });
 
-    useEffect(() => {
-        if (user?.uid) {
-            loadCuratorData();
-        }
-    }, [user]);
+    const [errors, setErrors] = useState<{
+        currentPassword?: string;
+        newPassword?: string;
+        confirmPassword?: string;
+    }>({});
 
-    const loadCuratorData = async () => {
+    const [snackbar, setSnackbar] = useState<{
+        open: boolean;
+        message: string;
+        severity: 'success' | 'error';
+    }>({ open: false, message: '', severity: 'success' });
+
+    const [userPassword, setUserPassword] = useState<string>('••••••••');
+    const [isLoadingPassword, setIsLoadingPassword] = useState(false);
+
+    const handleInputChange = (field: string, value: string) => {
+        setFormData(prev => ({ ...prev, [field]: value }));
+        // Очищаем ошибку при изменении поля
+        if (errors[field as keyof typeof errors]) {
+            setErrors(prev => ({ ...prev, [field]: undefined }));
+        }
+    };
+
+    const validateForm = () => {
+        const newErrors: typeof errors = {};
+
+        if (!formData.currentPassword) {
+            newErrors.currentPassword = 'Введите текущий пароль';
+        }
+
+        if (formData.newPassword.length < 6) {
+            newErrors.newPassword = 'Пароль должен содержать минимум 6 символов';
+        }
+
+        if (formData.newPassword !== formData.confirmPassword) {
+            newErrors.confirmPassword = 'Пароли не совпадают';
+        }
+
+        setErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
+    };
+
+    const handleChangePassword = async () => {
+        if (!validateForm()) return;
+
         try {
-            setLoading(true);
-            if (!user?.uid) return;
+            if (auth.currentUser && user?.email) {
+                // Сначала повторно аутентифицируем пользователя
+                const credential = EmailAuthProvider.credential(
+                    user.email,
+                    formData.currentPassword
+                );
 
-            const curatorData = await getCuratorById(user.uid);
-            if (curatorData) {
-                setCurator(curatorData);
-                setFormData({
-                    name: curatorData.name || '',
-                    email: curatorData.email || '',
-                    phone: curatorData.phone || '',
-                    position: curatorData.position || ''
+                await reauthenticateWithCredential(auth.currentUser, credential);
+
+                // Теперь изменяем пароль
+                await updatePassword(auth.currentUser, formData.newPassword);
+
+                setSnackbar({
+                    open: true,
+                    message: 'Пароль успешно изменен',
+                    severity: 'success'
                 });
-            } else {
-                setError('Данные куратора не найдены');
+                setChangePasswordDialogOpen(false);
+                setFormData({ currentPassword: '', newPassword: '', confirmPassword: '' });
             }
-        } catch (err) {
-            console.error('Ошибка загрузки данных куратора:', err);
-            setError('Ошибка при загрузке данных');
-        } finally {
-            setLoading(false);
-        }
-    };
+        } catch (error: any) {
+            console.error('Ошибка при изменении пароля:', error);
+            let errorMessage = 'Ошибка при изменении пароля';
 
-    const handleEdit = () => {
-        setEditing(true);
-    };
+            if (error.code === 'auth/wrong-password') {
+                errorMessage = 'Неверный текущий пароль';
+            } else if (error.code === 'auth/weak-password') {
+                errorMessage = 'Новый пароль слишком слабый';
+            } else if (error.code === 'auth/requires-recent-login') {
+                errorMessage = 'Требуется повторная аутентификация';
+            }
 
-    const handleCancel = () => {
-        setEditing(false);
-        // Восстанавливаем исходные данные
-        if (curator) {
-            setFormData({
-                name: curator.name || '',
-                email: curator.email || '',
-                phone: curator.phone || '',
-                position: curator.position || ''
+            setSnackbar({
+                open: true,
+                message: errorMessage,
+                severity: 'error'
             });
         }
     };
 
-    const handleSave = async () => {
-        if (!user?.uid) return;
-
+    const handleDeleteAccount = async () => {
         try {
-            setSaving(true);
-            await updateCuratorProfile(user.uid, formData);
-
-            // Обновляем локальные данные
-            if (curator) {
-                setCurator({
-                    ...curator,
-                    ...formData
-                });
-            }
-
-            setEditing(false);
-            showSnackbar('Профиль успешно обновлен', 'success');
-        } catch (err) {
-            console.error('Ошибка обновления профиля:', err);
-            showSnackbar('Ошибка при обновлении профиля', 'error');
-        } finally {
-            setSaving(false);
+            // Здесь должна быть логика удаления аккаунта куратора
+            await logout();
+            setSnackbar({
+                open: true,
+                message: 'Аккаунт успешно удален',
+                severity: 'success'
+            });
+        } catch (error: any) {
+            console.error('Ошибка при удалении аккаунта:', error);
+            setSnackbar({
+                open: true,
+                message: error.message || 'Ошибка при удалении аккаунта',
+                severity: 'error'
+            });
         }
     };
 
-    const handleInputChange = (field: string, value: string) => {
-        setFormData(prev => ({
-            ...prev,
-            [field]: value
-        }));
+    const handleCloseSnackbar = () => {
+        setSnackbar(prev => ({ ...prev, open: false }));
     };
 
-    const showSnackbar = (message: string, severity: 'success' | 'error') => {
-        setSnackbar({ open: true, message, severity });
+    const loadUserPassword = async () => {
+        try {
+            setIsLoadingPassword(true);
+            if (!user?.uid) return;
+
+            // Загружаем реальный пароль из базы данных
+            const credentials = await getCuratorCredentials(user.uid);
+            if (credentials && credentials.password) {
+                setUserPassword(credentials.password);
+            } else {
+                setUserPassword('••••••••');
+            }
+        } catch (error) {
+            console.error('Ошибка загрузки пароля:', error);
+            setUserPassword('••••••••');
+        } finally {
+            setIsLoadingPassword(false);
+        }
     };
 
-    if (loading) {
-        return (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
-                <CircularProgress />
-            </Box>
-        );
-    }
+    const handleShowPassword = () => {
+        setShowPassword(!showPassword);
+    };
 
-    if (error) {
-        return (
-            <Box sx={{ p: 3 }}>
-                <Alert severity="error">{error}</Alert>
-            </Box>
-        );
-    }
-
-    if (!curator) {
-        return (
-            <Box sx={{ p: 3 }}>
-                <Alert severity="warning">Данные куратора не найдены</Alert>
-            </Box>
-        );
-    }
+    useEffect(() => {
+        loadUserPassword();
+    }, [user?.uid]);
 
     return (
-        <Box sx={{ p: 3 }}>
-            <Card sx={{ mb: 3, borderRadius: 3 }}>
-                <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                        <Avatar
+        <Box sx={{ p: { xs: 1, sm: 3 }, pt: { xs: 12, sm: 16 } }}>
+            <Typography variant={isMobile ? 'h6' : 'h4'} sx={{ mb: { xs: 1, sm: 3 } }}>
+                Профиль куратора
+            </Typography>
+
+            <Card sx={{
+                borderRadius: 3,
+                boxShadow: '0 8px 32px 0 rgba(10,36,99,0.37)',
+                background: '#0A2463',
+                color: '#fff',
+                border: 'none',
+                p: { xs: 1, sm: 2 },
+                '&:hover': {
+                    transform: 'none',
+                    boxShadow: '0 8px 32px 0 rgba(10,36,99,0.37)',
+                    background: '#0A2463',
+                    borderColor: 'transparent'
+                }
+            }}>
+                <CardContent sx={{ p: { xs: 1, sm: 3 } }}>
+                    <Typography variant="h6" sx={{ mb: 3, color: '#D4AF37' }}>
+                        Учетные данные
+                    </Typography>
+
+                    <Box sx={{ mb: 3 }}>
+                        <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 1 }}>
+                            Логин (Email)
+                        </Typography>
+                        <TextField
+                            fullWidth
+                            value={user?.email || ''}
+                            disabled
                             sx={{
-                                width: 80,
-                                height: 80,
-                                bgcolor: 'primary.main',
-                                fontSize: '2rem',
-                                mr: 3
+                                '& .MuiInputBase-input': {
+                                    color: 'white',
+                                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                    borderRadius: 1
+                                },
+                                '& .MuiOutlinedInput-root': {
+                                    '& fieldset': {
+                                        borderColor: 'rgba(255, 255, 255, 0.3)'
+                                    }
+                                }
+                            }}
+                        />
+                    </Box>
+
+                    <Box sx={{ mb: 3 }}>
+                        <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)', mb: 1 }}>
+                            Пароль
+                        </Typography>
+                        <TextField
+                            fullWidth
+                            type={showPassword ? 'text' : 'password'}
+                            value={userPassword}
+                            disabled
+                            InputProps={{
+                                endAdornment: (
+                                    <InputAdornment position="end">
+                                        <IconButton
+                                            onClick={handleShowPassword}
+                                            edge="end"
+                                            disabled={isLoadingPassword}
+                                            sx={{ color: 'rgba(255, 255, 255, 0.7)' }}
+                                        >
+                                            {isLoadingPassword ? (
+                                                <CircularProgress size={20} color="inherit" />
+                                            ) : showPassword ? (
+                                                <VisibilityOffIcon />
+                                            ) : (
+                                                <VisibilityIcon />
+                                            )}
+                                        </IconButton>
+                                    </InputAdornment>
+                                )
+                            }}
+                            sx={{
+                                '& .MuiInputBase-input': {
+                                    color: 'white',
+                                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                    borderRadius: 1
+                                },
+                                '& .MuiOutlinedInput-root': {
+                                    '& fieldset': {
+                                        borderColor: 'rgba(255, 255, 255, 0.3)'
+                                    }
+                                }
+                            }}
+                        />
+                    </Box>
+
+                    <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                        <Button
+                            variant="contained"
+                            startIcon={<EditIcon />}
+                            onClick={() => setChangePasswordDialogOpen(true)}
+                            sx={{
+                                backgroundColor: '#D4AF37',
+                                color: '#0A2463',
+                                '&:hover': {
+                                    backgroundColor: '#B8941F'
+                                }
                             }}
                         >
-                            {curator.name ? curator.name.charAt(0).toUpperCase() : 'К'}
-                        </Avatar>
-                        <Box sx={{ flex: 1 }}>
-                            <Typography variant="h5" sx={{ fontWeight: 600, mb: 1 }}>
-                                {curator.name || 'Куратор'}
-                            </Typography>
-                            <Chip
-                                label="Куратор"
-                                color="primary"
-                                size="small"
-                            />
-                        </Box>
-                        {!editing && (
-                            <Button
-                                variant="outlined"
-                                startIcon={<EditIcon />}
-                                onClick={handleEdit}
-                                sx={{ ml: 2 }}
-                            >
-                                Редактировать
-                            </Button>
-                        )}
+                            Изменить пароль
+                        </Button>
+
+                        <Button
+                            variant="outlined"
+                            startIcon={<DeleteIcon />}
+                            onClick={() => setDeleteDialogOpen(true)}
+                            sx={{
+                                borderColor: '#ff4444',
+                                color: '#ff4444',
+                                '&:hover': {
+                                    borderColor: '#cc0000',
+                                    backgroundColor: 'rgba(255, 68, 68, 0.1)'
+                                }
+                            }}
+                        >
+                            Удалить аккаунт
+                        </Button>
                     </Box>
-
-                    <Divider sx={{ mb: 3 }} />
-
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                        {/* Имя */}
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            <PersonIcon sx={{ mr: 2, color: 'text.secondary' }} />
-                            {editing ? (
-                                <TextField
-                                    fullWidth
-                                    label="Имя"
-                                    value={formData.name}
-                                    onChange={(e) => handleInputChange('name', e.target.value)}
-                                    size="small"
-                                />
-                            ) : (
-                                <Typography variant="body1">
-                                    {curator.name || 'Не указано'}
-                                </Typography>
-                            )}
-                        </Box>
-
-                        {/* Email */}
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            <EmailIcon sx={{ mr: 2, color: 'text.secondary' }} />
-                            {editing ? (
-                                <TextField
-                                    fullWidth
-                                    label="Email"
-                                    type="email"
-                                    value={formData.email}
-                                    onChange={(e) => handleInputChange('email', e.target.value)}
-                                    size="small"
-                                />
-                            ) : (
-                                <Typography variant="body1">
-                                    {curator.email || 'Не указано'}
-                                </Typography>
-                            )}
-                        </Box>
-
-                        {/* Телефон */}
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            <PhoneIcon sx={{ mr: 2, color: 'text.secondary' }} />
-                            {editing ? (
-                                <TextField
-                                    fullWidth
-                                    label="Телефон"
-                                    value={formData.phone}
-                                    onChange={(e) => handleInputChange('phone', e.target.value)}
-                                    size="small"
-                                />
-                            ) : (
-                                <Typography variant="body1">
-                                    {curator.phone || 'Не указано'}
-                                </Typography>
-                            )}
-                        </Box>
-
-                        {/* Должность */}
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            <BusinessIcon sx={{ mr: 2, color: 'text.secondary' }} />
-                            {editing ? (
-                                <TextField
-                                    fullWidth
-                                    label="Должность"
-                                    value={formData.position}
-                                    onChange={(e) => handleInputChange('position', e.target.value)}
-                                    size="small"
-                                />
-                            ) : (
-                                <Typography variant="body1">
-                                    {curator.position || 'Не указано'}
-                                </Typography>
-                            )}
-                        </Box>
-                    </Box>
-
-                    {/* Кнопки редактирования */}
-                    {editing && (
-                        <Box sx={{ display: 'flex', gap: 2, mt: 3, justifyContent: 'flex-end' }}>
-                            <Button
-                                variant="outlined"
-                                startIcon={<CancelIcon />}
-                                onClick={handleCancel}
-                                disabled={saving}
-                            >
-                                Отмена
-                            </Button>
-                            <Button
-                                variant="contained"
-                                startIcon={saving ? <CircularProgress size={20} /> : <SaveIcon />}
-                                onClick={handleSave}
-                                disabled={saving}
-                            >
-                                {saving ? 'Сохранение...' : 'Сохранить'}
-                            </Button>
-                        </Box>
-                    )}
                 </CardContent>
             </Card>
 
+            {/* Диалог изменения пароля */}
+            <Dialog
+                open={changePasswordDialogOpen}
+                onClose={() => setChangePasswordDialogOpen(false)}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle>Изменить пароль</DialogTitle>
+                <DialogContent>
+                    <Box sx={{ pt: 1 }}>
+                        <TextField
+                            fullWidth
+                            label="Текущий пароль"
+                            type={showCurrentPassword ? 'text' : 'password'}
+                            value={formData.currentPassword}
+                            onChange={(e) => handleInputChange('currentPassword', e.target.value)}
+                            error={!!errors.currentPassword}
+                            helperText={errors.currentPassword}
+                            InputProps={{
+                                endAdornment: (
+                                    <InputAdornment position="end">
+                                        <IconButton
+                                            onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                                            edge="end"
+                                        >
+                                            {showCurrentPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                                        </IconButton>
+                                    </InputAdornment>
+                                )
+                            }}
+                            sx={{ mb: 2 }}
+                        />
+                        <TextField
+                            fullWidth
+                            label="Новый пароль"
+                            type={showNewPassword ? 'text' : 'password'}
+                            value={formData.newPassword}
+                            onChange={(e) => handleInputChange('newPassword', e.target.value)}
+                            error={!!errors.newPassword}
+                            helperText={errors.newPassword}
+                            InputProps={{
+                                endAdornment: (
+                                    <InputAdornment position="end">
+                                        <IconButton
+                                            onClick={() => setShowNewPassword(!showNewPassword)}
+                                            edge="end"
+                                        >
+                                            {showNewPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                                        </IconButton>
+                                    </InputAdornment>
+                                )
+                            }}
+                            sx={{ mb: 2 }}
+                        />
+                        <TextField
+                            fullWidth
+                            label="Подтвердите новый пароль"
+                            type={showConfirmPassword ? 'text' : 'password'}
+                            value={formData.confirmPassword}
+                            onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
+                            error={!!errors.confirmPassword}
+                            helperText={errors.confirmPassword}
+                            InputProps={{
+                                endAdornment: (
+                                    <InputAdornment position="end">
+                                        <IconButton
+                                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                            edge="end"
+                                        >
+                                            {showConfirmPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                                        </IconButton>
+                                    </InputAdornment>
+                                )
+                            }}
+                        />
+                    </Box>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setChangePasswordDialogOpen(false)}>
+                        Отмена
+                    </Button>
+                    <Button
+                        onClick={handleChangePassword}
+                        variant="contained"
+                        sx={{
+                            backgroundColor: '#D4AF37',
+                            color: '#0A2463',
+                            '&:hover': {
+                                backgroundColor: '#B8941F'
+                            }
+                        }}
+                    >
+                        Изменить
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Диалог удаления аккаунта */}
+            <Dialog
+                open={deleteDialogOpen}
+                onClose={() => setDeleteDialogOpen(false)}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle>Удалить аккаунт</DialogTitle>
+                <DialogContent>
+                    <Typography>
+                        Вы уверены, что хотите удалить свой аккаунт? Это действие нельзя отменить.
+                    </Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setDeleteDialogOpen(false)}>
+                        Отмена
+                    </Button>
+                    <Button
+                        onClick={handleDeleteAccount}
+                        variant="contained"
+                        color="error"
+                    >
+                        Удалить
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Snackbar для уведомлений */}
             <Snackbar
                 open={snackbar.open}
                 autoHideDuration={6000}
-                onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+                onClose={handleCloseSnackbar}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
             >
                 <Alert
-                    onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+                    onClose={handleCloseSnackbar}
                     severity={snackbar.severity}
                 >
                     {snackbar.message}
                 </Alert>
             </Snackbar>
+
+
         </Box>
     );
 };

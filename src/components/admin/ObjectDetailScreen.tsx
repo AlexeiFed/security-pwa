@@ -34,6 +34,7 @@ import { getObjectById } from '../../services/objects';
 import { ObjectData, Alert as AlertType } from '../../types';
 import { subscribeActiveAlert } from '../../services/alerts';
 import YandexMap from '../maps/YandexMap';
+import AdminMobileHeader from '../common/AdminMobileHeader';
 import Header from '../common/Header';
 import InspectorBottomNavigation from '../common/BottomNavigation';
 import { colors } from '../../utils/colors';
@@ -244,22 +245,10 @@ const ObjectDetailScreen: React.FC<ObjectDetailScreenProps> = ({ objectId: propO
                     onLogoClick={() => navigate('/')}
                 />
             ) : (
-                <Header
-                    title={`Объект: ${object.name}`}
-                    action={
-                        <IconButton
-                            color="inherit"
-                            onClick={() => navigate(-1)}
-                            sx={{ color: 'white' }}
-                        >
-                            <ArrowBackIcon />
-                        </IconButton>
-                    }
-                    onLogoClick={() => navigate('/')}
-                />
+                <AdminMobileHeader title={`Объект: ${object.name}`} />
             )}
 
-            <Box sx={{ flex: 1, overflow: 'auto', p: 2, pb: 7 }}>
+            <Box sx={{ flex: 1, overflow: 'auto', p: 2, pb: 7, pt: user?.role === 'admin' ? 10 : 2 }}>
                 {/* Информация об объекте */}
                 <Card sx={{ mb: 3, background: `linear-gradient(135deg, ${colors.primary.main} 0%, #000 100%)` }}>
                     <CardContent>

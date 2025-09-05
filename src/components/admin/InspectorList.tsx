@@ -4,7 +4,7 @@ import {
     Typography,
     Button,
     Card,
-    CardContent,
+
     IconButton,
     Chip,
     Dialog,
@@ -18,7 +18,10 @@ import {
     MenuItem,
     Alert,
     Snackbar,
-    CircularProgress
+    CircularProgress,
+    useTheme,
+    useMediaQuery,
+    Fab
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -31,19 +34,24 @@ import {
 import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import TelegramIcon from '@mui/icons-material/Telegram';
 import { useNavigate } from 'react-router-dom';
-import { getInspectors, updateInspectorStatus, deleteInspector, authService } from '../../services/auth';
+import { updateInspectorStatus, deleteInspector, authService } from '../../services/auth';
 import { Inspector, InspectorStatus } from '../../types';
 import { cacheManager } from '../../services/cache';
 import { colors } from '../../utils/colors';
 
 const InspectorList = () => {
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
     const [inspectors, setInspectors] = useState<Inspector[]>([]);
+    const [filteredInspectors, setFilteredInspectors] = useState<Inspector[]>([]);
+    const [searchQuery, setSearchQuery] = useState('');
     const [loading, setLoading] = useState(true);
     const [addDialogOpen, setAddDialogOpen] = useState(false);
     const [statusDialogOpen, setStatusDialogOpen] = useState(false);
     const [credentialsDialogOpen, setCredentialsDialogOpen] = useState(false);
     const [creatingDialogOpen, setCreatingDialogOpen] = useState(false);
     const [selectedInspector, setSelectedInspector] = useState<Inspector | null>(null);
+    const [statusSaving, setStatusSaving] = useState(false);
     const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
         open: false,
         message: '',
@@ -55,7 +63,8 @@ const InspectorList = () => {
     const [newInspector, setNewInspector] = useState({
         firstName: '',
         lastName: '',
-        email: '',
+        email: '@vityaz.com',
+        phone: '',
         password: ''
     });
 
@@ -67,11 +76,47 @@ const InspectorList = () => {
 
     const navigate = useNavigate();
 
-    useEffect(() => {
-        loadInspectors();
-    }, []);
+    // Стили для TextField в темной теме
+    const textFieldStyles = {
+        '& .MuiInputLabel-root': { color: 'rgba(255, 255, 255, 0.7)' },
+        '& .MuiInputLabel-root.Mui-focused': { color: '#1976d2' },
+        '& .MuiOutlinedInput-root': {
+            color: '#fff',
+            '& fieldset': { borderColor: 'rgba(255, 255, 255, 0.3)' },
+            '&:hover fieldset': { borderColor: 'rgba(255, 255, 255, 0.5)' },
+            '&.Mui-focused fieldset': { borderColor: '#1976d2' }
+        }
+    };
 
-    const loadInspectors = async () => {
+    // Функция транслитерации русских символов в латиницу
+    const transliterate = (text: string): string => {
+        const transliterationMap: { [key: string]: string } = {
+            'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo',
+            'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+            'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+            'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch',
+            'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+            'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'Yo',
+            'Ж': 'Zh', 'З': 'Z', 'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M',
+            'Н': 'N', 'О': 'O', 'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U',
+            'Ф': 'F', 'Х': 'Kh', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch',
+            'Ъ': '', 'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya'
+        };
+
+        return text.split('').map(char => transliterationMap[char] || char).join('').toLowerCase();
+    };
+
+    // Обработчик изменения фамилии с автозаполнением email
+    const handleLastNameChange = (lastName: string) => {
+        const transliteratedLastName = transliterate(lastName);
+        setNewInspector(prev => ({
+            ...prev,
+            lastName,
+            email: transliteratedLastName ? `${transliteratedLastName}@vityaz.com` : '@vityaz.com'
+        }));
+    };
+
+    const loadInspectors = React.useCallback(async () => {
         try {
             setLoading(true);
             console.log('🔄 Загрузка инспекторов с кэшированием...');
@@ -79,6 +124,7 @@ const InspectorList = () => {
             // Используем кэшированные данные
             const data = await cacheManager.getInspectors();
             setInspectors(data);
+            setFilteredInspectors(data);
 
             console.log('✅ Инспекторы загружены из кэша:', data.length);
         } catch (error) {
@@ -87,7 +133,19 @@ const InspectorList = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
+
+    useEffect(() => {
+        loadInspectors();
+    }, [loadInspectors]);
+
+    useEffect(() => {
+        const filtered = inspectors.filter(inspector =>
+            inspector.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            inspector.email.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+        setFilteredInspectors(filtered);
+    }, [searchQuery, inspectors]);
 
     const generatePassword = () => {
         const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -101,7 +159,7 @@ const InspectorList = () => {
     const handleAddInspector = async () => {
         try {
             // Валидация полей
-            if (!newInspector.firstName.trim() || !newInspector.lastName.trim() || !newInspector.email.trim()) {
+            if (!newInspector.firstName.trim() || !newInspector.lastName.trim() || !newInspector.email.trim() || !newInspector.phone.trim()) {
                 showSnackbar('Заполните все обязательные поля', 'error');
                 return;
             }
@@ -121,7 +179,7 @@ const InspectorList = () => {
             const name = `${newInspector.lastName} ${newInspector.firstName}`;
 
             // Создаем пользователя в Firebase Auth без входа в систему
-            const user = await authService.createUserWithoutLogin(email, password, 'inspector', name);
+            await authService.createUserWithoutLogin(email, password, 'inspector', name, newInspector.phone);
 
             setCreatedCredentials({ email, password });
             setCreatingDialogOpen(false);
@@ -131,7 +189,8 @@ const InspectorList = () => {
             setNewInspector({
                 firstName: '',
                 lastName: '',
-                email: '',
+                email: '@vityaz.com',
+                phone: '',
                 password: ''
             });
 
@@ -197,7 +256,12 @@ const InspectorList = () => {
 
     const handleStatusSave = async () => {
         if (selectedInspector) {
-            await handleStatusChange(selectedInspector.uid, selectedInspector.status);
+            setStatusSaving(true);
+            try {
+                await handleStatusChange(selectedInspector.uid, selectedInspector.status);
+            } finally {
+                setStatusSaving(false);
+            }
         }
     };
 
@@ -211,16 +275,18 @@ const InspectorList = () => {
     };
 
     const sendToWhatsApp = () => {
-        const message = `Добрый день! Ваши учетные данные для входа в систему:\n\nЛогин: ${createdCredentials.email}\nПароль: ${createdCredentials.password}\n\nС уважением, администрация ЧОО "ВИТЯЗЬ"`;
+        const appUrl = `${window.location.origin}?email=${encodeURIComponent(createdCredentials.email)}&password=${encodeURIComponent(createdCredentials.password)}`;
+        const message = `Добрый день! Ваши учетные данные для входа в систему безопасности ЧОО "ВИТЯЗЬ":\n\n👤 Логин: ${createdCredentials.email}\n🔐 Пароль: ${createdCredentials.password}\n\n🚀 Для быстрого входа используйте эту ссылку:\n${appUrl}\n\nС уважением, администрация ЧОО "ВИТЯЗЬ"`;
         const encodedMessage = encodeURIComponent(message);
         const whatsappUrl = `https://wa.me/?text=${encodedMessage}`;
         window.open(whatsappUrl, '_blank');
     };
 
     const sendToTelegram = () => {
-        const message = `Добрый день! Ваши учетные данные для входа в систему:\n\nЛогин: ${createdCredentials.email}\nПароль: ${createdCredentials.password}\n\nС уважением, администрация ЧОО "ВИТЯЗЬ"`;
+        const appUrl = `${window.location.origin}?email=${encodeURIComponent(createdCredentials.email)}&password=${encodeURIComponent(createdCredentials.password)}`;
+        const message = `Добрый день! Ваши учетные данные для входа в систему безопасности ЧОО "ВИТЯЗЬ":\n\n👤 Логин: ${createdCredentials.email}\n🔐 Пароль: ${createdCredentials.password}\n\n🚀 Для быстрого входа используйте эту ссылку:\n${appUrl}\n\nС уважением, администрация ЧОО "ВИТЯЗЬ"`;
         const encodedMessage = encodeURIComponent(message);
-        const telegramUrl = `https://t.me/share/url?url=${encodeURIComponent(window.location.origin)}&text=${encodedMessage}`;
+        const telegramUrl = `https://t.me/share/url?url=${encodeURIComponent(appUrl)}&text=${encodedMessage}`;
         window.open(telegramUrl, '_blank');
     };
 
@@ -275,52 +341,101 @@ const InspectorList = () => {
     }
 
     return (
-        <Box sx={{ p: 3 }}>
+        <Box sx={{
+            p: 3,
+            pt: isMobile ? 2 : { xs: 12, sm: 16 },
+            pb: isMobile ? 8 : 3 // Дополнительный отступ снизу для мобильной версии под FAB
+        }}>
             {/* Заголовок страницы */}
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                <IconButton
-                    onClick={() => navigate('/')}
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: isMobile ? 2 : 3, flexDirection: 'column', width: '100%' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', mb: 2 }}>
+                    <IconButton
+                        onClick={() => navigate('/')}
+                        sx={{
+                            mr: 2,
+                            color: colors.secondary.main,
+                            backgroundColor: 'rgba(212, 175, 55, 0.1)',
+                            '&:hover': {
+                                backgroundColor: 'rgba(212, 175, 55, 0.2)',
+                                transform: 'scale(1.1)'
+                            },
+                            transition: 'all 0.3s ease'
+                        }}
+                    >
+                        <ArrowBackIcon />
+                    </IconButton>
+                    <Typography
+                        variant={isMobile ? "h5" : "h4"}
+                        component="h1"
+                        sx={{
+                            color: colors.text.primary,
+                            fontWeight: 600,
+                            fontSize: isMobile ? '1.25rem' : undefined
+                        }}
+                    >
+                        Управление инспекторами
+                    </Typography>
+                </Box>
+                <TextField
+                    fullWidth
+                    placeholder="Поиск инспектора..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
                     sx={{
-                        mr: 2,
-                        color: colors.secondary.main,
-                        backgroundColor: 'rgba(212, 175, 55, 0.1)',
-                        '&:hover': {
-                            backgroundColor: 'rgba(212, 175, 55, 0.2)',
-                            transform: 'scale(1.1)'
+                        mb: 2,
+                        '& .MuiInputBase-root': {
+                            backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                            borderRadius: 2,
+                            color: '#fff',
+                            '&:hover': {
+                                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                            },
                         },
-                        transition: 'all 0.3s ease'
+                        '& .MuiOutlinedInput-notchedOutline': {
+                            borderColor: 'rgba(255, 255, 255, 0.1)',
+                        },
+                        '& .MuiInputBase-root:hover .MuiOutlinedInput-notchedOutline': {
+                            borderColor: 'rgba(255, 255, 255, 0.2)',
+                        },
+                        '& .MuiInputBase-root.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                            borderColor: colors.secondary.main,
+                        },
                     }}
-                >
-                    <ArrowBackIcon />
-                </IconButton>
-                <Typography variant="h4" component="h1" sx={{ color: colors.text.primary, fontWeight: 600 }}>
-                    Управление инспекторами
-                </Typography>
+                />
             </Box>
 
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 3 }}>
-                <Button
-                    variant="contained"
-                    startIcon={<AddIcon />}
-                    onClick={() => setAddDialogOpen(true)}
-                >
-                    Добавить инспектора
-                </Button>
-            </Box>
+            {/* Кнопка добавления - только для десктопа */}
+            {!isMobile && (
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 3 }}>
+                    <Button
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        onClick={() => setAddDialogOpen(true)}
+                    >
+                        Добавить инспектора
+                    </Button>
+                </Box>
+            )}
 
-            <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))' }}>
-                {inspectors.map((inspector) => (
+            <Box sx={{
+                display: 'grid',
+                gap: isMobile ? 2 : 3,
+                gridTemplateColumns: isMobile
+                    ? 'repeat(auto-fill, minmax(140px, 1fr))'
+                    : 'repeat(auto-fill, minmax(250px, 1fr))'
+            }}>
+                {filteredInspectors.map((inspector) => (
                     <Card
                         key={inspector.uid}
                         sx={{
                             cursor: 'pointer',
                             background: 'linear-gradient(135deg, #0A2463 0%, #1E3A8A 100%)',
                             border: '2px solid #D4AF37',
-                            borderRadius: 3,
+                            borderRadius: isMobile ? 2 : 3,
                             boxShadow: '0 8px 32px 0 rgba(10,36,99,0.37)',
                             transition: 'all 0.3s ease',
                             '&:hover': {
-                                transform: 'translateY(-8px) scale(1.02)',
+                                transform: isMobile ? 'scale(1.05)' : 'translateY(-8px) scale(1.02)',
                                 boxShadow: '0 16px 48px 0 rgba(212, 175, 55, 0.3)',
                                 borderColor: '#E5C158',
                                 '& .card-icon': {
@@ -330,28 +445,29 @@ const InspectorList = () => {
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: 'center',
-                            py: 3,
-                            px: 2,
+                            py: isMobile ? 2 : 3,
+                            px: isMobile ? 1 : 2,
                         }}
                         onClick={() => handleInspectorClick(inspector)}
                     >
                         <PersonIcon
                             className="card-icon"
                             sx={{
-                                fontSize: 32,
+                                fontSize: isMobile ? 24 : 32,
                                 color: '#ffffff',
-                                mb: 1,
+                                mb: isMobile ? 0.5 : 1,
                                 transition: 'transform 0.3s ease'
                             }}
                         />
                         <Typography
-                            variant="h6"
+                            variant={isMobile ? "body2" : "h6"}
                             sx={{
                                 fontWeight: 600,
                                 textAlign: 'center',
-                                mb: 1,
-                                fontSize: '0.9rem',
-                                color: '#ffffff'
+                                mb: isMobile ? 0.5 : 1,
+                                fontSize: isMobile ? '0.8rem' : '0.9rem',
+                                color: '#ffffff',
+                                lineHeight: isMobile ? 1.2 : undefined
                             }}
                         >
                             {inspector.name}
@@ -359,10 +475,11 @@ const InspectorList = () => {
                         <Typography
                             variant="body2"
                             sx={{
-                                fontSize: '0.75rem',
+                                fontSize: isMobile ? '0.65rem' : '0.75rem',
                                 textAlign: 'center',
-                                mb: 1,
-                                color: 'rgba(255, 255, 255, 0.8)'
+                                mb: isMobile ? 0.5 : 1,
+                                color: 'rgba(255, 255, 255, 0.8)',
+                                lineHeight: isMobile ? 1.1 : undefined
                             }}
                         >
                             {inspector.email}
@@ -420,6 +537,31 @@ const InspectorList = () => {
                 ))}
             </Box>
 
+            {/* FAB кнопка для мобильной версии */}
+            {isMobile && (
+                <Fab
+                    color="primary"
+                    aria-label="add"
+                    onClick={() => setAddDialogOpen(true)}
+                    sx={{
+                        position: 'fixed',
+                        bottom: 16,
+                        right: 16,
+                        backgroundColor: colors.secondary.main,
+                        color: '#000',
+                        boxShadow: '0 4px 12px rgba(212, 175, 55, 0.5)',
+                        '&:hover': {
+                            backgroundColor: '#E5C158',
+                            transform: 'scale(1.1)'
+                        },
+                        transition: 'all 0.3s ease',
+                        zIndex: 1000
+                    }}
+                >
+                    <AddIcon />
+                </Fab>
+            )}
+
             {/* Диалог добавления инспектора */}
             <Dialog open={addDialogOpen} onClose={() => setAddDialogOpen(false)} maxWidth="sm" fullWidth>
                 <DialogTitle>Добавить инспектора</DialogTitle>
@@ -433,16 +575,18 @@ const InspectorList = () => {
                         required
                         error={!newInspector.firstName.trim()}
                         helperText={!newInspector.firstName.trim() ? 'Обязательное поле' : ''}
+                        sx={textFieldStyles}
                     />
                     <TextField
                         fullWidth
                         label="Фамилия*"
                         value={newInspector.lastName}
-                        onChange={(e) => setNewInspector({ ...newInspector, lastName: e.target.value })}
+                        onChange={(e) => handleLastNameChange(e.target.value)}
                         margin="normal"
                         required
                         error={!newInspector.lastName.trim()}
                         helperText={!newInspector.lastName.trim() ? 'Обязательное поле' : ''}
+                        sx={textFieldStyles}
                     />
                     <TextField
                         fullWidth
@@ -451,6 +595,7 @@ const InspectorList = () => {
                         value={newInspector.email}
                         onChange={(e) => setNewInspector({ ...newInspector, email: e.target.value })}
                         margin="normal"
+                        sx={textFieldStyles}
                         required
                         error={!newInspector.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newInspector.email)}
                         helperText={
@@ -460,6 +605,19 @@ const InspectorList = () => {
                                     ? 'Введите корректный email'
                                     : ''
                         }
+                    />
+                    <TextField
+                        fullWidth
+                        label="Номер телефона*"
+                        type="tel"
+                        value={newInspector.phone}
+                        onChange={(e) => setNewInspector({ ...newInspector, phone: e.target.value })}
+                        margin="normal"
+                        sx={textFieldStyles}
+                        required
+                        placeholder="+7 (999) 123-45-67"
+                        error={!newInspector.phone.trim()}
+                        helperText={!newInspector.phone.trim() ? 'Обязательное поле' : ''}
                     />
                 </DialogContent>
                 <DialogActions>
@@ -531,6 +689,8 @@ const InspectorList = () => {
                     <Button
                         onClick={handleStatusSave}
                         variant="contained"
+                        disabled={statusSaving}
+                        startIcon={statusSaving ? <CircularProgress size={20} /> : null}
                         sx={{
                             backgroundColor: '#4CAF50',
                             '&:hover': {
@@ -564,6 +724,7 @@ const InspectorList = () => {
                                 }}
                                 variant="outlined"
                                 fullWidth
+                                sx={textFieldStyles}
                             />
                             <IconButton onClick={() => copyToClipboard(createdCredentials.email)}>
                                 <CopyIcon />
@@ -583,6 +744,7 @@ const InspectorList = () => {
                                     sx: { background: 'transparent', fontFamily: 'monospace', p: 1, borderRadius: 1 }
                                 }}
                                 variant="outlined"
+                                sx={textFieldStyles}
                                 fullWidth
                             />
                             <IconButton onClick={() => copyToClipboard(createdCredentials.password)}>

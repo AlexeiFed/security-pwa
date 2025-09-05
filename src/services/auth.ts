@@ -365,32 +365,181 @@ export const deleteCurator = async (uid: string): Promise<void> => {
     }
 };
 
+// Методы для работы с охранниками
+export const getGuards = async (): Promise<import('../types').Guard[]> => {
+    try {
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('role', '==', 'guard'));
+        const querySnapshot = await getDocs(q);
+
+        const guards: import('../types').Guard[] = [];
+        // Получаем объекты для подстановки названий
+        const objectsRef = collection(db, 'objects');
+        const objectsSnapshot = await getDocs(objectsRef);
+        const objectsMap = new Map<string, string>();
+        objectsSnapshot.forEach((doc) => {
+            objectsMap.set(doc.id, doc.data().name);
+        });
+
+        querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            const assignedObject = data.assignedObject || '';
+            guards.push({
+                uid: doc.id,
+                email: data.email,
+                role: 'guard',
+                name: data.name,
+                status: data.status || 'working',
+                createdAt: data.createdAt?.toDate() || new Date(),
+                assignedObject: assignedObject,
+                assignedObjectName: assignedObject ? objectsMap.get(assignedObject) || '' : '',
+                phone: data.phone || ''
+            });
+        });
+
+        return guards;
+    } catch (error) {
+        console.error('Ошибка получения охранников:', error);
+        throw error;
+    }
+};
+
+export const updateGuardStatus = async (uid: string, status: InspectorStatus): Promise<void> => {
+    try {
+        const userRef = doc(db, 'users', uid);
+        await updateDoc(userRef, { status });
+        console.log(`Статус охранника ${uid} обновлен на ${status}`);
+    } catch (error) {
+        console.error('Ошибка обновления статуса охранника:', error);
+        throw error;
+    }
+};
+
+export const deleteGuard = async (uid: string): Promise<void> => {
+    try {
+        const userRef = doc(db, 'users', uid);
+        await deleteDoc(userRef);
+        console.log(`Охранник ${uid} удален`);
+    } catch (error) {
+        console.error('Ошибка удаления охранника:', error);
+        throw error;
+    }
+};
+
+export const getGuardById = async (uid: string): Promise<import('../types').Guard | null> => {
+    try {
+        const userRef = doc(db, 'users', uid);
+        const userDoc = await getDoc(userRef);
+
+        if (!userDoc.exists()) {
+            return null;
+        }
+
+        const data = userDoc.data();
+        // Получаем название объекта, если назначен
+        let assignedObjectName = '';
+        if (data.assignedObject) {
+            const { doc: objectDoc, getDoc } = await import('firebase/firestore');
+            const objectRef = objectDoc(db, 'objects', data.assignedObject);
+            const objectSnap = await getDoc(objectRef);
+            if (objectSnap.exists()) {
+                assignedObjectName = objectSnap.data().name || '';
+            }
+        }
+
+        return {
+            uid: userDoc.id,
+            email: data.email,
+            role: 'guard',
+            name: data.name,
+            status: data.status || 'working',
+            createdAt: data.createdAt?.toDate() || new Date(),
+            assignedObject: data.assignedObject || '',
+            assignedObjectName: assignedObjectName,
+            phone: data.phone || ''
+        };
+    } catch (error) {
+        console.error('Ошибка получения охранника:', error);
+        throw error;
+    }
+};
+
+export const getGuardCredentials = async (uid: string): Promise<{ email: string; password: string } | null> => {
+    try {
+        const userRef = doc(db, 'users', uid);
+        const userDoc = await getDoc(userRef);
+
+        if (!userDoc.exists()) {
+            return null;
+        }
+
+        const data = userDoc.data();
+        const password = data.password || 'guard123'; // fallback пароль
+
+        return {
+            email: data.email || '',
+            password: password
+        };
+    } catch (error) {
+        console.error('Ошибка получения учетных данных охранника:', error);
+        throw error;
+    }
+};
+
+export const updateGuardCredentials = async (uid: string, email: string, password: string): Promise<void> => {
+    try {
+        const userRef = doc(db, 'users', uid);
+
+        // Обновляем данные в Firestore
+        await updateDoc(userRef, {
+            email: email,
+            password: password, // В реальном приложении пароль должен быть зашифрован
+            updatedAt: new Date()
+        });
+
+        console.log(`Учетные данные охранника ${uid} обновлены`);
+    } catch (error) {
+        console.error('Ошибка обновления учетных данных охранника:', error);
+        throw error;
+    }
+};
+
 export const getInspectorCredentials = async (uid: string): Promise<{ email: string; password: string } | null> => {
     try {
-        // Получаем учетные данные из коллекции user_credentials
-        const credentialsRef = doc(db, 'user_credentials', uid);
-        const credentialsDoc = await getDoc(credentialsRef);
+        // Сначала пробуем получить из основной коллекции users
+        const userRef = doc(db, 'users', uid);
+        const userDoc = await getDoc(userRef);
 
-        if (!credentialsDoc.exists()) {
-            // Если учетные данные не найдены, получаем email из основной коллекции
-            const userRef = doc(db, 'users', uid);
-            const userDoc = await getDoc(userRef);
+        if (!userDoc.exists()) {
+            return null;
+        }
 
-            if (!userDoc.exists()) {
-                return null;
-            }
+        const userData = userDoc.data();
 
-            const userData = userDoc.data();
+        // Если пароль есть в основной коллекции, используем его
+        if (userData.password) {
             return {
                 email: userData.email || '',
-                password: '••••••••' // Маскируем пароль если не найден
+                password: userData.password
             };
         }
 
-        const credentialsData = credentialsDoc.data();
+        // Если пароля нет в основной коллекции, пробуем из user_credentials
+        const credentialsRef = doc(db, 'user_credentials', uid);
+        const credentialsDoc = await getDoc(credentialsRef);
+
+        if (credentialsDoc.exists()) {
+            const credentialsData = credentialsDoc.data();
+            return {
+                email: userData.email || '',
+                password: credentialsData.password || '••••••••'
+            };
+        }
+
+        // Если нигде нет пароля, возвращаем с маскировкой
         return {
-            email: credentialsData.email || '',
-            password: credentialsData.password || '••••••••'
+            email: userData.email || '',
+            password: '••••••••'
         };
     } catch (error) {
         console.error('Ошибка получения учетных данных инспектора:', error);
@@ -549,7 +698,7 @@ export const authService = {
         }
     },
 
-    async createUserWithoutLogin(email: string, password: string, role: UserRole, name: string): Promise<User> {
+    async createUserWithoutLogin(email: string, password: string, role: UserRole, name: string, phone?: string): Promise<User> {
         console.log('Создание пользователя без входа в систему:', { email, role, name });
 
         try {
@@ -567,7 +716,8 @@ export const authService = {
                     email,
                     password,
                     role,
-                    name
+                    name,
+                    phone: phone || ''
                 })
             });
 

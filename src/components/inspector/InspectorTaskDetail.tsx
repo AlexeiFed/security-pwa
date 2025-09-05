@@ -5,50 +5,98 @@
  * @created: 2025-06-30
  */
 
-import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
 import {
     Box,
     Typography,
     Card,
     CardContent,
-    Chip,
     Button,
-    CircularProgress,
-    List,
-    ListItem,
-    Divider,
+    Chip,
     Dialog,
     DialogTitle,
     DialogContent,
     DialogActions,
     TextField,
-    IconButton,
-    Tooltip,
     Snackbar,
-    Alert
+    Alert,
+    Accordion,
+    AccordionSummary,
+    AccordionDetails,
+    IconButton,
+    Divider,
+    Grid,
+    Paper,
+    List,
+    ListItem,
+    ListItemText,
+    ListItemIcon,
+    Badge,
+    Tooltip,
+    CircularProgress,
+    AlertTitle,
+    Collapse
 } from '@mui/material';
 import {
-    Map as MapIcon,
-    Route as RouteIcon,
-    LocationOn as LocationOnIcon,
-    DirectionsCar as DirectionsCarIcon,
-    AccessTime as AccessTimeIcon,
+    ExpandMore as ExpandMoreIcon,
+    CheckCircle as CheckCircleIcon,
+    Schedule as ScheduleIcon,
+    Pending as PendingIcon,
+    Assignment as AssignmentIcon,
+    LocationOn as LocationIcon,
+    Phone as PhoneIcon,
+    Email as EmailIcon,
+    Warning as WarningIcon,
+    Close as CloseIcon,
+
     Navigation as NavigationIcon,
-    Close as CloseIcon
+    Alarm as AlarmIcon,
+    Check as CheckIcon,
+    Clear as ClearIcon,
+    Info as InfoIcon,
+    Edit as EditIcon,
+    Save as SaveIcon,
+    Cancel as CancelIcon,
+    Add as AddIcon,
+    Remove as RemoveIcon,
+    Visibility as VisibilityIcon,
+    VisibilityOff as VisibilityOffIcon,
+    Refresh as RefreshIcon,
+    MyLocation as MyLocationIcon,
+    Directions as DirectionsIcon,
+    Map as MapIcon,
+    Terrain as TerrainIcon,
+    Business as BusinessIcon,
+    Home as HomeIcon,
+    Store as StoreIcon,
+    Warehouse as WarehouseIcon,
+    Factory as FactoryIcon,
+    Security as SecurityIcon,
+    Timer as TimerIcon,
+    CalendarToday as CalendarIcon,
+    AccessTime as TimeIcon,
+    Speed as SpeedIcon,
+    Straighten as DistanceIcon,
+    Error as ErrorIcon,
+    Info as InfoIcon2
 } from '@mui/icons-material';
-import { Task, ObjectData, Alert as AlertType } from '../../types';
-import { getTaskById, acceptTask, updateTask } from '../../services/tasks';
 import { useAuth } from '../../context/AuthContext';
+import { Task, TaskObject, ObjectData } from '../../types';
+import { cacheManager } from '../../services/cache';
+import { createAlert, subscribeActiveAlert, resetAlert } from '../../services/alerts';
+import { sendAlarmPushToAll } from '../../services/pushNotifications';
+import { playAlarm } from '../../services/alarmSound';
 import SimpleYandexMap from '../maps/SimpleYandexMap';
-import YandexMap from '../maps/YandexMap';
 import YandexNavigator from '../maps/YandexNavigator';
+import { useNavigate } from 'react-router-dom';
+import { useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { getTaskById, acceptTask, updateTask } from '../../services/tasks';
 import { getObjectById } from '../../services/objects';
 import { fonts } from '../../utils/fonts';
-import { createAlert, subscribeActiveAlert, resetAlert } from '../../services/alerts';
 import { stopAlarm } from '../../services/alarmSound';
 import MuiAlert from '@mui/material/Alert';
-import { playAlarm } from '../../services/alarmSound';
+import { useParams } from 'react-router-dom';
 
 interface InspectorTaskDetailProps {
     id?: string;
@@ -75,9 +123,10 @@ const InspectorTaskDetail: React.FC<InspectorTaskDetailProps> = ({ id, task: tas
     const [center, setCenter] = useState<[number, number] | null>(null);
     const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
     const [successDialog, setSuccessDialog] = useState<{ open: boolean; objectName: string }>({ open: false, objectName: '' });
-    const [activeAlert, setActiveAlert] = useState<AlertType | null>(null);
+    const [activeAlert, setActiveAlert] = useState<any | null>(null); // Changed type to any for now
     const [showAlarm, setShowAlarm] = useState(false);
     const [alarmDialog, setAlarmDialog] = useState(false);
+    const [alarmDescription, setAlarmDescription] = useState('');
 
     // Новые состояния для маршрутизации
     const [showRoute, setShowRoute] = useState(false);
@@ -125,6 +174,7 @@ const InspectorTaskDetail: React.FC<InspectorTaskDetailProps> = ({ id, task: tas
 
     useEffect(() => {
         if (user) {
+            // Subscribe to active alerts using the context
             const unsub = subscribeActiveAlert((alert) => {
                 setActiveAlert(alert);
                 setShowAlarm(!!alert);
@@ -207,22 +257,62 @@ const InspectorTaskDetail: React.FC<InspectorTaskDetailProps> = ({ id, task: tas
     };
 
     const confirmAlarm = async () => {
-        if (!task || !user) return;
+        if (!user || !selectedObjectId) return;
+
         try {
+            console.log('🚨 Активация тревоги инспектором...');
+
+            // Создаем тревогу в системе
             await createAlert({
                 type: 'inspector',
                 userId: user.uid,
-                userName: user.name || user.email || 'Инспектор',
-                objectId: selectedObjectId || '',
-                objectName: selectedObjectId ? objectDataMap[selectedObjectId]?.name : '',
-                description: 'Тревога от инспектора'
+                userName: user.name,
+                objectId: selectedObjectId,
+                objectName: objectDataMap[selectedObjectId]?.name || '',
+                description: alarmDescription || 'Тревога от инспектора',
+                coordinates: objectDataMap[selectedObjectId]?.position
             });
+
+            // Отправляем push-уведомления всем пользователям
+            console.log('📡 Отправка push-уведомлений...');
+            const pushResult = await sendAlarmPushToAll(
+                '🚨 ТРЕВОГА!',
+                `Тревога от инспектора ${user.name}${objectDataMap[selectedObjectId]?.name ? ` с объекта: ${objectDataMap[selectedObjectId].name}` : ''}`,
+                selectedObjectId,
+                objectDataMap[selectedObjectId]?.name
+            );
+
+            if (pushResult.success) {
+                console.log('✅ Push-уведомления отправлены:', pushResult.sentCount, 'пользователям');
+            } else {
+                console.warn('⚠️ Ошибка отправки push-уведомлений:', pushResult.message);
+            }
+
             setAlarmDialog(false);
+            setAlarmDescription('');
             setSnackbar({ open: true, message: 'Тревожный сигнал отправлен' });
+
+            // Сохраняем информацию о локальной активации тревоги
+            localStorage.setItem('localAlarmActivated', 'true');
+            localStorage.setItem('localAlarmObjectName', selectedObjectId ? objectDataMap[selectedObjectId]?.name : '');
+            localStorage.setItem('localAlarmDescription', alarmDescription || 'Тревога от инспектора');
+
+            console.log('💾 Информация о тревоге сохранена в localStorage');
+            console.log('✅ Тревога активирована, интерфейс обновится автоматически');
+
+            // Отправляем кастомное событие для обновления интерфейса
+            window.dispatchEvent(new CustomEvent('localAlarmActivated', {
+                detail: {
+                    objectName: selectedObjectId ? objectDataMap[selectedObjectId]?.name : '',
+                    description: alarmDescription || 'Тревога от инспектора'
+                }
+            }));
+
+            // Убираем принудительную перезагрузку страницы
+            // window.location.reload(); // Removed
         } catch (e) {
-            console.error('Ошибка при отправке тревоги:', e);
-            // Не показываем ошибку пользователю, так как тревога может быть отправлена успешно
-            // setError('Ошибка при отправке тревоги');
+            console.error('Ошибка отправки тревоги:', e);
+            setSnackbar({ open: true, message: 'Ошибка при отправке тревоги' });
         }
     };
 
@@ -235,35 +325,7 @@ const InspectorTaskDetail: React.FC<InspectorTaskDetailProps> = ({ id, task: tas
         }
     };
 
-    // Обработчик построения маршрута
-    const handleBuildRoute = () => {
-        if (!selectedObjectId) {
-            setSnackbar({ open: true, message: 'Выберите объект для построения маршрута' });
-            return;
-        }
 
-        setShowRoute(true);
-        setRouteToObjectId(selectedObjectId);
-        setRouteError(null);
-        setRouteInfo(null);
-    };
-
-    // Обработчик открытия встроенного навигатора
-    const handleOpenNavigator = () => {
-        if (!selectedObjectId || !objectPositions[selectedObjectId]) {
-            setSnackbar({ open: true, message: 'Выберите объект для навигации' });
-            return;
-        }
-        console.log('🚀 Открываем встроенный навигатор для объекта:', selectedObjectId);
-        // Закрываем другие режимы карты
-        setShowMap(false);
-        setShowRoute(false);
-        setRouteError(null);
-        setRouteInfo(null);
-        // Открываем навигатор
-        setShowNavigator(true);
-        console.log('✅ showNavigator установлен в true');
-    };
 
 
 
@@ -442,13 +504,8 @@ const InspectorTaskDetail: React.FC<InspectorTaskDetailProps> = ({ id, task: tas
                                             <MapIcon />
                                         </IconButton>
                                     </Tooltip>
-                                    <Tooltip title="Построить маршрут">
-                                        <IconButton onClick={handleBuildRoute}>
-                                            <RouteIcon />
-                                        </IconButton>
-                                    </Tooltip>
-                                    <Tooltip title="Открыть навигатор">
-                                        <IconButton onClick={handleOpenNavigator}>
+                                    <Tooltip title="Открыть Яндекс.Навигатор">
+                                        <IconButton onClick={() => openYandexNavigator(selectedObjectId)}>
                                             <NavigationIcon />
                                         </IconButton>
                                     </Tooltip>
@@ -491,7 +548,7 @@ const InspectorTaskDetail: React.FC<InspectorTaskDetailProps> = ({ id, task: tas
 
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', pr: 4 }}>
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                            <DirectionsCarIcon fontSize="small" sx={{ color: 'rgba(255, 255, 255, 0.9)' }} />
+                                            <DirectionsIcon fontSize="small" sx={{ color: 'rgba(255, 255, 255, 0.9)' }} />
                                             <Typography variant="body2" sx={{
                                                 color: 'rgba(255, 255, 255, 0.9)',
                                                 fontWeight: 'normal',
@@ -502,7 +559,7 @@ const InspectorTaskDetail: React.FC<InspectorTaskDetailProps> = ({ id, task: tas
                                             </Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                            <AccessTimeIcon fontSize="small" sx={{ color: 'rgba(255, 255, 255, 0.9)' }} />
+                                            <TimeIcon fontSize="small" sx={{ color: 'rgba(255, 255, 255, 0.9)' }} />
                                             <Typography variant="body2" sx={{
                                                 color: 'rgba(255, 255, 255, 0.9)',
                                                 fontWeight: 'normal',
@@ -526,21 +583,21 @@ const InspectorTaskDetail: React.FC<InspectorTaskDetailProps> = ({ id, task: tas
                             {/* Карта с маршрутом */}
                             {showRoute && selectedObjectId && objectPositions[selectedObjectId] && objectDataMap[selectedObjectId] && center && (
                                 <Box sx={{ mb: { xs: 2, sm: 3 }, minHeight: { xs: 220, sm: 400 }, mt: { xs: 2, sm: 0 }, borderRadius: 2, overflow: 'hidden', boxShadow: 2, position: 'relative' }}>
-                                    <YandexMap
-                                        markers={[{
-                                            id: selectedObjectId,
-                                            position: objectPositions[selectedObjectId],
-                                            title: objectDataMap[selectedObjectId]?.name || '',
-                                            status: 'pending',
-                                            isSelected: true
-                                        }]}
-                                        center={center}
-                                        zoom={15}
-                                        showRoute={showRoute}
-                                        routeToObjectId={routeToObjectId}
-                                        onRouteCalculated={handleRouteCalculated}
-                                        height={400}
-                                    />
+                                    {/* <YandexMap */}
+                                    {/*     markers={[{ */}
+                                    {/*         id: selectedObjectId, */}
+                                    {/*         position: objectPositions[selectedObjectId], */}
+                                    {/*         title: objectDataMap[selectedObjectId]?.name || '', */}
+                                    {/*         status: 'pending', */}
+                                    {/*         isSelected: true */}
+                                    {/*     }]} */}
+                                    {/*     center={center} */}
+                                    {/*     zoom={15} */}
+                                    {/*     showRoute={showRoute} */}
+                                    {/*     routeToObjectId={routeToObjectId} */}
+                                    {/*     onRouteCalculated={handleRouteCalculated} */}
+                                    {/*     height={400} */}
+                                    {/* /> */}
                                 </Box>
                             )}
 
@@ -603,7 +660,7 @@ const InspectorTaskDetail: React.FC<InspectorTaskDetailProps> = ({ id, task: tas
                                                         <Typography variant="body2" sx={{ fontSize: { xs: 13, sm: fonts.size.sm }, fontWeight: 'bold', color: '#fff', textAlign: 'left' }}>
                                                             {obj.name}
                                                         </Typography>
-                                                        <LocationOnIcon sx={{ color: '#D4AF37', ml: 0.5 }} />
+                                                        <LocationIcon sx={{ color: '#D4AF37', ml: 0.5 }} />
                                                     </Box>
 
                                                     {/* Описание объекта с кнопкой ... прямо под названием */}
@@ -918,13 +975,53 @@ const InspectorTaskDetail: React.FC<InspectorTaskDetailProps> = ({ id, task: tas
                     </Box>
                 </Box>
             )}
-            <Dialog open={alarmDialog} onClose={() => setAlarmDialog(false)}>
+            <Dialog open={alarmDialog} onClose={() => {
+                setAlarmDialog(false);
+                setAlarmDescription(''); // Сбрасываем описание при закрытии
+            }}>
                 <DialogTitle>Подтвердите тревогу</DialogTitle>
                 <DialogContent>
                     <Typography>Вы действительно хотите отправить тревожный сигнал по объекту?</Typography>
+                    <TextField
+                        autoFocus
+                        margin="dense"
+                        label="Описание тревоги"
+                        fullWidth
+                        multiline
+                        rows={2}
+                        value={alarmDescription}
+                        onChange={(e) => setAlarmDescription(e.target.value)}
+                        placeholder="Опишите причину тревоги..."
+                        sx={{
+                            mt: 2,
+                            '& .MuiOutlinedInput-root': {
+                                '& fieldset': {
+                                    borderColor: 'rgba(255, 255, 255, 0.3)',
+                                },
+                                '&:hover fieldset': {
+                                    borderColor: 'rgba(255, 255, 255, 0.5)',
+                                },
+                                '&.Mui-focused fieldset': {
+                                    borderColor: '#D4AF37',
+                                },
+                            },
+                            '& .MuiInputLabel-root': {
+                                color: 'rgba(255, 255, 255, 0.7)',
+                                '&.Mui-focused': {
+                                    color: '#D4AF37',
+                                },
+                            },
+                            '& .MuiInputBase-input': {
+                                color: '#fff',
+                            },
+                        }}
+                    />
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setAlarmDialog(false)}>Отмена</Button>
+                    <Button onClick={() => {
+                        setAlarmDialog(false);
+                        setAlarmDescription(''); // Сбрасываем описание при отмене
+                    }}>Отмена</Button>
                     <Button onClick={confirmAlarm} color="error" variant="contained">Подтвердить</Button>
                 </DialogActions>
             </Dialog>

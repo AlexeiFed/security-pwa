@@ -12,6 +12,7 @@ import {
     getDoc,
     addDoc,
     updateDoc,
+    deleteDoc,
     query,
     where,
 
@@ -313,4 +314,16 @@ function mapTaskObjects(objects: any[]): TaskObject[] {
         ...obj,
         checkedAt: obj.checkedAt && typeof obj.checkedAt.toDate === 'function' ? obj.checkedAt.toDate() : obj.checkedAt
     }));
-} 
+}
+
+// Удаление задания
+export const deleteTask = async (id: string): Promise<void> => {
+    try {
+        const taskRef = doc(db, 'tasks', id);
+        await deleteDoc(taskRef);
+        console.log(`Задание ${id} успешно удалено`);
+    } catch (error) {
+        console.error('Ошибка при удалении задания:', error);
+        throw new Error('Ошибка при удалении задания');
+    }
+}; 

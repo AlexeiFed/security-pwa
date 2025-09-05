@@ -37,6 +37,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Curator, ObjectData, Alert as AlertType, Task } from '../../types';
 import { getCuratorById } from '../../services/auth';
 import { createAlert, subscribeActiveAlert, resetAlert } from '../../services/alerts';
+import { sendAlarmPushToAll } from '../../services/pushNotifications';
 import { stopAlarm } from '../../services/alarmSound';
 import Header from '../common/Header';
 import InspectorBottomNavigation from '../common/BottomNavigation';
@@ -61,16 +62,56 @@ const CuratorPanel = () => {
         message: '',
         severity: 'success'
     });
+    const [localAlarmActivated, setLocalAlarmActivated] = useState(false);
 
     // Загружаем состояние alarmDismissed из localStorage при инициализации
     useEffect(() => {
         const savedDismissed = localStorage.getItem('curatorAlarmDismissed');
-        console.log('🔍 CuratorPanel: Загружено из localStorage:', savedDismissed);
         if (savedDismissed === 'true') {
             setAlarmDismissed(true);
-            console.log('✅ CuratorPanel: Состояние alarmDismissed установлено в true');
         }
+
+        // Загружаем информацию о локальной активации тревоги куратора
+        const curatorLocalAlarmActivated = localStorage.getItem('curatorLocalAlarmActivated');
+        if (curatorLocalAlarmActivated === 'true') {
+            setLocalAlarmActivated(true);
+            console.log('✅ Локальная активация тревоги куратора установлена в true');
+            console.log('📋 Информация о тревоге куратора:', {
+                objectName: localStorage.getItem('curatorLocalAlarmObjectName'),
+                description: localStorage.getItem('curatorLocalAlarmDescription')
+            });
+        } else {
+            console.log('❌ Локальная активация тревоги куратора не найдена');
+        }
+
+        // Добавляем слушатель кастомного события для обновления в той же вкладке
+        const handleCuratorLocalAlarmActivated = (e: CustomEvent) => {
+            console.log('🔄 Получено кастомное событие curatorLocalAlarmActivated');
+            setLocalAlarmActivated(true);
+        };
+
+        const handleCuratorLocalAlarmDeactivated = () => {
+            console.log('🔄 Получено кастомное событие curatorLocalAlarmDeactivated');
+            setLocalAlarmActivated(false);
+        };
+
+        window.addEventListener('curatorLocalAlarmActivated', handleCuratorLocalAlarmActivated as EventListener);
+        window.addEventListener('curatorLocalAlarmDeactivated', handleCuratorLocalAlarmDeactivated);
+
+        return () => {
+            window.removeEventListener('curatorLocalAlarmActivated', handleCuratorLocalAlarmActivated as EventListener);
+            window.removeEventListener('curatorLocalAlarmDeactivated', handleCuratorLocalAlarmDeactivated);
+        };
     }, []);
+
+    // Проверяем локальное состояние тревоги при каждом рендере
+    useEffect(() => {
+        const curatorLocalAlarmActivated = localStorage.getItem('curatorLocalAlarmActivated');
+        if (curatorLocalAlarmActivated === 'true' && !localAlarmActivated) {
+            console.log('🔄 Восстанавливаем локальное состояние тревоги куратора');
+            setLocalAlarmActivated(true);
+        }
+    });
 
     useEffect(() => {
         if (user?.uid) {
@@ -137,7 +178,21 @@ const CuratorPanel = () => {
                 if (!alert) {
                     console.log('🔄 CuratorPanel: Тревога сброшена, очищаем состояние');
                     setAlarmDismissed(false);
+                    setLocalAlarmActivated(false);
                     localStorage.removeItem('curatorAlarmDismissed');
+                    localStorage.removeItem('curatorLocalAlarmActivated');
+                    localStorage.removeItem('curatorLocalAlarmObjectName');
+                    localStorage.removeItem('curatorLocalAlarmDescription');
+                } else {
+                    // Если получена тревога через подписку, сбрасываем локальное состояние только если это не наша тревога
+                    if (alert.userId !== user.uid) {
+                        setLocalAlarmActivated(false);
+                        localStorage.removeItem('curatorLocalAlarmActivated');
+                        localStorage.removeItem('curatorLocalAlarmObjectName');
+                        localStorage.removeItem('curatorLocalAlarmDescription');
+                    } else {
+                        console.log('🔄 Получена наша собственная тревога, сохраняем локальное состояние');
+                    }
                 }
             }, user);
             return () => unsub();
@@ -235,6 +290,9 @@ const CuratorPanel = () => {
     const confirmAlarm = async () => {
         if (!user || !selectedObject) return;
         try {
+            console.log('🚨 Активация тревоги куратором...');
+
+            // Создаем тревогу в системе
             await createAlert({
                 type: 'curator',
                 userId: user.uid,
@@ -244,10 +302,42 @@ const CuratorPanel = () => {
                 description: alarmDescription,
                 coordinates: selectedObject.position
             });
+
+            // Отправляем push-уведомления всем пользователям
+            console.log('📡 Отправка push-уведомлений...');
+            const pushResult = await sendAlarmPushToAll(
+                '🚨 ТРЕВОГА!',
+                `Тревога от куратора ${user.name} с объекта: ${selectedObject.name}`,
+                selectedObject.id,
+                selectedObject.name
+            );
+
+            if (pushResult.success) {
+                console.log('✅ Push-уведомления отправлены:', pushResult.sentCount, 'пользователям');
+            } else {
+                console.warn('⚠️ Ошибка отправки push-уведомлений:', pushResult.message);
+            }
+
             setAlarmDialog(false);
             setSelectedObject(null);
             setAlarmDescription('');
             showSnackbar('Тревога отправлена!', 'success');
+
+            // Сохраняем информацию о локальной активации тревоги
+            localStorage.setItem('curatorLocalAlarmActivated', 'true');
+            localStorage.setItem('curatorLocalAlarmObjectName', selectedObject.name);
+            localStorage.setItem('curatorLocalAlarmDescription', alarmDescription || 'Тревога от куратора');
+
+            console.log('💾 Информация о тревоге куратора сохранена в localStorage');
+            console.log('✅ Тревога активирована, интерфейс обновится автоматически');
+
+            // Отправляем кастомное событие для обновления интерфейса
+            window.dispatchEvent(new CustomEvent('curatorLocalAlarmActivated', {
+                detail: {
+                    objectName: selectedObject.name,
+                    description: alarmDescription || 'Тревога от куратора'
+                }
+            }));
         } catch (err) {
             console.error('Ошибка отправки тревоги:', err);
             showSnackbar('Ошибка при отправке тревоги', 'error');
@@ -299,7 +389,9 @@ const CuratorPanel = () => {
             }
 
             // Если приоритет одинаковый, сортируем по дате создания (новые сначала)
-            return b.createdAt.getTime() - a.createdAt.getTime();
+            const dateA = a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt);
+            const dateB = b.createdAt instanceof Date ? b.createdAt : new Date(b.createdAt);
+            return dateB.getTime() - dateA.getTime();
         });
 
         return sortedTasks[0];
@@ -312,6 +404,19 @@ const CuratorPanel = () => {
         stopAlarm(); // Останавливаем звук тревоги
         console.log('💾 CuratorPanel: Состояние сохранено в localStorage');
         console.log('🔇 CuratorPanel: Звук тревоги остановлен');
+    };
+
+    const handleDismissLocalAlarm = () => {
+        console.log('🔙 Скрытие локальной тревоги куратора');
+        setLocalAlarmActivated(false);
+        localStorage.removeItem('curatorLocalAlarmActivated');
+        localStorage.removeItem('curatorLocalAlarmObjectName');
+        localStorage.removeItem('curatorLocalAlarmDescription');
+
+        // Отправляем кастомное событие для обновления интерфейса
+        window.dispatchEvent(new CustomEvent('curatorLocalAlarmDeactivated'));
+
+        console.log('💾 Локальная тревога куратора скрыта');
     };
 
     const handleNavigate = (page: string) => {
@@ -354,11 +459,149 @@ const CuratorPanel = () => {
         );
     }
 
-    console.log('🔍 CuratorPanel: Состояние компонента:', { activeAlert: !!activeAlert, alarmDismissed, showAlarm });
+    console.log('🔍 CuratorPanel: Состояние компонента:', { activeAlert: !!activeAlert, alarmDismissed, showAlarm, localAlarmActivated });
+
+    // Если локальная тревога куратора активирована, показываем надпись и нижнюю навигацию
+    if (localAlarmActivated) {
+        console.log('📱 Показываем интерфейс с надписью для тревоги от куратора');
+
+        // Получаем информацию о локальной тревоге
+        const localAlarmObjectName = localStorage.getItem('curatorLocalAlarmObjectName') || '';
+        const localAlarmDescription = localStorage.getItem('curatorLocalAlarmDescription') || '';
+
+        console.log('📋 Локальная информация куратора:', { localAlarmObjectName, localAlarmDescription });
+
+        return (
+            <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+                {/* Красная надпись с информацией о тревоге */}
+                <Box
+                    sx={{
+                        bgcolor: 'error.main',
+                        color: 'error.contrastText',
+                        p: 2,
+                        textAlign: 'center',
+                        borderBottom: '2px solid #fff'
+                    }}
+                >
+                    <Typography variant="h6" fontWeight="bold">
+                        🚨 АКТИВНАЯ ТРЕВОГА
+                    </Typography>
+                    <Typography variant="body2">
+                        {localAlarmDescription ? localAlarmDescription : (localAlarmObjectName ? `Тревога с объекта: ${localAlarmObjectName}` : 'Тревога от куратора')}
+                    </Typography>
+                </Box>
+
+                {/* Основной контент */}
+                <Box sx={{ flex: 1, overflow: 'auto' }}>
+                    <Typography variant="h4" component="h1" sx={{ color: 'white', mb: 3, p: 3 }}>
+                        Мои объекты
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, p: 3 }}>
+                        {objects.map((object) => {
+                            const lastTask = getLastIncompleteTask(object.id);
+                            return (
+                                <Card
+                                    key={object.id}
+                                    sx={{
+                                        width: '100%',
+                                        cursor: 'pointer',
+                                        boxShadow: 2,
+                                        transition: 'all 0.3s ease',
+                                        '&:hover': {
+                                            boxShadow: 8,
+                                            transform: 'translateY(-2px)',
+                                        },
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        p: 2,
+                                    }}
+                                    onClick={() => handleObjectClick(object)}
+                                >
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                                        <Box sx={{ flex: 1 }}>
+                                            <Typography
+                                                variant="h6"
+                                                sx={{
+                                                    fontWeight: 600,
+                                                    textAlign: 'left',
+                                                    mb: 1,
+                                                    fontSize: '1.1rem',
+                                                }}
+                                            >
+                                                {object.name}
+                                            </Typography>
+                                            <Typography
+                                                variant="body2"
+                                                sx={{
+                                                    color: 'text.secondary',
+                                                    textAlign: 'left',
+                                                    mb: 1,
+                                                }}
+                                            >
+                                                {object.address}
+                                            </Typography>
+                                            <Chip
+                                                label={getStatusText(object.status)}
+                                                color={getStatusColor(object.status)}
+                                                size="small"
+                                                sx={{ mr: 1 }}
+                                            />
+                                            {lastTask && (
+                                                <Chip
+                                                    label={`Задача: ${lastTask.title}`}
+                                                    color="warning"
+                                                    size="small"
+                                                />
+                                            )}
+                                        </Box>
+                                        <IconButton
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleAlarm(object);
+                                            }}
+                                            sx={{
+                                                bgcolor: 'error.main',
+                                                color: 'white',
+                                                '&:hover': {
+                                                    bgcolor: 'error.dark',
+                                                },
+                                            }}
+                                        >
+                                            <WarningIcon />
+                                        </IconButton>
+                                    </Box>
+                                </Card>
+                            );
+                        })}
+                    </Box>
+                </Box>
+
+                {/* Нижняя навигация */}
+                <InspectorBottomNavigation
+                    currentPage="home"
+                    onNavigate={handleNavigate}
+                    showObject={!!localAlarmObjectName}
+                />
+
+                {/* Кнопка скрытия локальной тревоги */}
+                <Box sx={{ p: 2, textAlign: 'center' }}>
+                    <Button
+                        variant="contained"
+                        color="secondary"
+                        onClick={handleDismissLocalAlarm}
+                        sx={{ fontWeight: 700 }}
+                    >
+                        Свернуть тревожный экран
+                    </Button>
+                </Box>
+            </Box>
+        );
+    }
 
     return (
         <Box sx={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0A2463 0%, #000 100%)' }}>
-            {showAlarm && !alarmDismissed && (
+            {/* Показываем тревожный экран только если это не локальная тревога куратора */}
+            {showAlarm && !alarmDismissed && !localAlarmActivated && (
                 <Box sx={{
                     position: 'fixed',
                     zIndex: 2000,
@@ -379,9 +622,9 @@ const CuratorPanel = () => {
                     <Typography variant="h5" sx={{ color: '#fff', mb: 2, textAlign: 'center' }}>
                         {activeAlert?.type === 'admin' ? 'Тревога от администратора' : activeAlert?.objectName ? `Тревога с объекта: ${activeAlert.objectName}` : 'Тревога от инспектора'}
                     </Typography>
-                    {activeAlert?.objectName && (
-                        <Typography variant="h6" sx={{ color: '#fff', mb: 1, textAlign: 'center' }}>
-                            Объект: {activeAlert.objectName}
+                    {activeAlert?.description && activeAlert.description !== 'Тревога от инспектора' && (
+                        <Typography variant="body1" sx={{ color: '#fff', mb: 2, textAlign: 'center', fontStyle: 'italic' }}>
+                            {activeAlert.description}
                         </Typography>
                     )}
                     <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
@@ -399,7 +642,7 @@ const CuratorPanel = () => {
                             </Button>
                         )}
                         <Button variant="contained" color="inherit" onClick={handleDismissAlarm} sx={{ fontWeight: 700 }}>
-                            Сбросить тревогу
+                            Свернуть тревожный экран
                         </Button>
                     </Box>
                 </Box>
@@ -422,15 +665,10 @@ const CuratorPanel = () => {
                             🚨 АКТИВНАЯ ТРЕВОГА
                         </Typography>
                         <Typography variant="body2">
-                            {activeAlert.type === 'admin' ? 'Тревога от администратора' :
+                            {activeAlert.description ? activeAlert.description : (activeAlert.type === 'admin' ? 'Тревога от администратора' :
                                 activeAlert.objectName ? `Тревога с объекта: ${activeAlert.objectName}` :
-                                    'Тревога от инспектора'}
+                                    'Тревога от инспектора')}
                         </Typography>
-                        {activeAlert.objectName && (
-                            <Typography variant="body2">
-                                Объект: {activeAlert.objectName}
-                            </Typography>
-                        )}
                     </Box>
 
                     {/* Шапка как на главном экране куратора */}
@@ -549,7 +787,7 @@ const CuratorPanel = () => {
                         onLogoClick={() => navigate('/')}
                     />
 
-                    <Box sx={{ p: 3 }}>
+                    <Box sx={{ p: 3, pt: { xs: 12, sm: 16 } }}>
                         <Typography variant="h4" component="h1" sx={{ color: 'white', mb: 3 }}>
                             Мои объекты
                         </Typography>

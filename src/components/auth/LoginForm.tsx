@@ -27,6 +27,26 @@ const LoginForm = () => {
 
     const { login, loading, user } = useAuth();
 
+    // Автозаполнение из URL параметров
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const emailParam = urlParams.get('email');
+        const passwordParam = urlParams.get('password');
+
+        if (emailParam) {
+            setEmail(emailParam);
+        }
+        if (passwordParam) {
+            setPassword(passwordParam);
+        }
+
+        // Очищаем URL параметры для безопасности
+        if (emailParam || passwordParam) {
+            const newUrl = window.location.pathname;
+            window.history.replaceState({}, document.title, newUrl);
+        }
+    }, []);
+
     // Перенаправление если пользователь уже авторизован
     useEffect(() => {
         if (user) {

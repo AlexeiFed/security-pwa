@@ -5,7 +5,7 @@
  * @created: 2025-07-20
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Box,
     Typography,
@@ -34,8 +34,8 @@ import {
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 import { colors } from '../../utils/colors';
-import { getInspectorById } from '../../services/auth';
-import { updatePassword } from 'firebase/auth';
+import { getInspectorById, getInspectorCredentials } from '../../services/auth';
+import { updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { auth } from '../../services/firebase';
 
 const InspectorProfile: React.FC = () => {
@@ -43,6 +43,7 @@ const InspectorProfile: React.FC = () => {
     const isMobile = useMediaQuery('(max-width:600px)');
 
     const [showPassword, setShowPassword] = useState(false);
+    const [showCurrentPassword, setShowCurrentPassword] = useState(false);
     const [showNewPassword, setShowNewPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
@@ -50,11 +51,13 @@ const InspectorProfile: React.FC = () => {
     const [changePasswordDialogOpen, setChangePasswordDialogOpen] = useState(false);
 
     const [formData, setFormData] = useState({
+        currentPassword: '',
         newPassword: '',
         confirmPassword: ''
     });
 
     const [errors, setErrors] = useState<{
+        currentPassword?: string;
         newPassword?: string;
         confirmPassword?: string;
     }>({});
@@ -79,6 +82,10 @@ const InspectorProfile: React.FC = () => {
     const validateForm = () => {
         const newErrors: typeof errors = {};
 
+        if (!formData.currentPassword) {
+            newErrors.currentPassword = 'Введите текущий пароль';
+        }
+
         if (formData.newPassword.length < 6) {
             newErrors.newPassword = 'Пароль должен содержать минимум 6 символов';
         }
@@ -95,8 +102,16 @@ const InspectorProfile: React.FC = () => {
         if (!validateForm()) return;
 
         try {
-            // Изменяем пароль через Firebase Auth
-            if (auth.currentUser) {
+            if (auth.currentUser && user?.email) {
+                // Сначала повторно аутентифицируем пользователя
+                const credential = EmailAuthProvider.credential(
+                    user.email,
+                    formData.currentPassword
+                );
+
+                await reauthenticateWithCredential(auth.currentUser, credential);
+
+                // Теперь изменяем пароль
                 await updatePassword(auth.currentUser, formData.newPassword);
 
                 setSnackbar({
@@ -106,7 +121,7 @@ const InspectorProfile: React.FC = () => {
                 });
 
                 setChangePasswordDialogOpen(false);
-                setFormData({ newPassword: '', confirmPassword: '' });
+                setFormData({ currentPassword: '', newPassword: '', confirmPassword: '' });
                 setErrors({});
 
                 // Обновляем отображаемый пароль
@@ -118,10 +133,12 @@ const InspectorProfile: React.FC = () => {
             console.error('Ошибка при изменении пароля:', error);
             let errorMessage = 'Ошибка при изменении пароля';
 
-            if (error.code === 'auth/requires-recent-login') {
-                errorMessage = 'Для изменения пароля необходимо повторно войти в систему';
+            if (error.code === 'auth/wrong-password') {
+                errorMessage = 'Неверный текущий пароль';
             } else if (error.code === 'auth/weak-password') {
-                errorMessage = 'Пароль слишком слабый. Используйте минимум 6 символов';
+                errorMessage = 'Новый пароль слишком слабый';
+            } else if (error.code === 'auth/requires-recent-login') {
+                errorMessage = 'Требуется повторная аутентификация';
             }
 
             setSnackbar({
@@ -164,11 +181,11 @@ const InspectorProfile: React.FC = () => {
 
         setIsLoadingPassword(true);
         try {
-            const inspectorData = await getInspectorById(user.uid);
-            if (inspectorData) {
-                // В реальном приложении пароль должен быть зашифрован
-                // Здесь используем временное решение
-                setUserPassword('inspector123');
+            const credentials = await getInspectorCredentials(user.uid);
+            if (credentials && credentials.password) {
+                setUserPassword(credentials.password);
+            } else {
+                setUserPassword('••••••••');
             }
         } catch (error) {
             console.error('Ошибка загрузки пароля:', error);
@@ -180,11 +197,12 @@ const InspectorProfile: React.FC = () => {
 
     // Загружаем пароль при первом показе
     const handleShowPassword = () => {
-        if (userPassword === '••••••••' && !isLoadingPassword) {
-            loadUserPassword();
-        }
         setShowPassword(!showPassword);
     };
+
+    useEffect(() => {
+        loadUserPassword();
+    }, [user?.uid]);
 
     if (!user) {
         return (
@@ -197,7 +215,7 @@ const InspectorProfile: React.FC = () => {
     }
 
     return (
-        <Box sx={{ p: { xs: 1, sm: 3 } }}>
+        <Box sx={{ p: { xs: 1, sm: 3 }, pt: { xs: 12, sm: 16 } }}>
             <Typography variant={isMobile ? 'h6' : 'h4'} sx={{ mb: { xs: 1, sm: 3 } }}>
                 Профиль инспектора
             </Typography>
@@ -251,7 +269,7 @@ const InspectorProfile: React.FC = () => {
                         <TextField
                             fullWidth
                             type={showPassword ? 'text' : 'password'}
-                            value={showPassword ? userPassword : '••••••••'}
+                            value={userPassword}
                             disabled
                             InputProps={{
                                 endAdornment: (
@@ -333,6 +351,28 @@ const InspectorProfile: React.FC = () => {
                 <DialogTitle>Изменить пароль</DialogTitle>
                 <DialogContent>
                     <Box sx={{ pt: 1 }}>
+                        <TextField
+                            fullWidth
+                            label="Текущий пароль"
+                            type={showCurrentPassword ? 'text' : 'password'}
+                            value={formData.currentPassword}
+                            onChange={(e) => handleInputChange('currentPassword', e.target.value)}
+                            error={!!errors.currentPassword}
+                            helperText={errors.currentPassword}
+                            InputProps={{
+                                endAdornment: (
+                                    <InputAdornment position="end">
+                                        <IconButton
+                                            onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                                            edge="end"
+                                        >
+                                            {showCurrentPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                                        </IconButton>
+                                    </InputAdornment>
+                                )
+                            }}
+                            sx={{ mb: 2 }}
+                        />
                         <TextField
                             fullWidth
                             label="Новый пароль"

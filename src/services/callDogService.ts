@@ -93,8 +93,8 @@ export async function sendAlarmCall(alarmData: AlarmCallData): Promise<CallDogRe
 
         console.log('Данные для CallDog API:', requestData);
 
-        // Отправляем запрос к CallDog API
-        const response = await fetch(`${CALLDOG_CONFIG.BASE_URL}/create`, {
+        // Отправляем запрос через наш push-server для обхода CORS
+        const response = await fetch(`${process.env.REACT_APP_PUSH_SERVER_URL}/callDog/send`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -227,24 +227,26 @@ export async function getCallInfo(callId: string): Promise<CallDogCallInfo | nul
 }
 
 /**
- * Проверяет статус CallDog API
+ * Проверяет статус CallDog API через наш push-server
  * @returns Promise<boolean> - доступен ли API
  */
 export async function checkCallDogStatus(): Promise<boolean> {
     try {
-        // Проверяем только валидность API ключа через userInfo endpoint
-        const response = await fetch(`${CALLDOG_CONFIG.BASE_URL.replace('/apiCalls', '')}/userInfo`, {
-            method: 'POST',
+        // Проверяем через наш push-server, который имеет доступ к CallDog API
+        const response = await fetch(`${process.env.REACT_APP_PUSH_SERVER_URL}/callDog/status`, {
+            method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
-            },
-            body: JSON.stringify({
-                apiKey: CALLDOG_CONFIG.API_KEY
-            })
+            }
         });
 
-        return response.ok;
+        if (!response.ok) {
+            return false;
+        }
+
+        const result = await response.json();
+        return result.status === 'ok';
 
     } catch (error) {
         console.error('CallDog API недоступен:', error);

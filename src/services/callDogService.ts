@@ -31,6 +31,8 @@ export interface CallDogResponse {
     callId?: string;
     message?: string;
     error?: string;
+    isSpamBlocked?: boolean;
+    retryAfter?: number; // секунды до следующей попытки
 }
 
 export interface CallDogCallInfo {
@@ -103,7 +105,22 @@ export async function sendAlarmCall(alarmData: AlarmCallData): Promise<CallDogRe
 
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(`CallDog API error: ${errorData.message || response.statusText}`);
+            const errorMessage = errorData.message || response.statusText;
+
+            // Проверяем, является ли ошибка блокировкой спама
+            if (errorMessage.toLowerCase().includes('spam') ||
+                errorMessage.toLowerCase().includes('блокир') ||
+                errorMessage.toLowerCase().includes('заблокир') ||
+                response.status === 429) {
+                return {
+                    success: false,
+                    error: 'CallDog заблокировал запрос как спам. Попробуйте позже.',
+                    isSpamBlocked: true,
+                    retryAfter: 300 // 5 минут
+                };
+            }
+
+            throw new Error(`CallDog API error: ${errorMessage}`);
         }
 
         const result = await response.json();
@@ -215,20 +232,15 @@ export async function getCallInfo(callId: string): Promise<CallDogCallInfo | nul
  */
 export async function checkCallDogStatus(): Promise<boolean> {
     try {
-        // Простой тестовый запрос для проверки доступности API
-        const response = await fetch(`${CALLDOG_CONFIG.BASE_URL}/create`, {
+        // Проверяем только валидность API ключа через userInfo endpoint
+        const response = await fetch(`${CALLDOG_CONFIG.BASE_URL.replace('/apiCalls', '')}/userInfo`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             },
             body: JSON.stringify({
-                apiKey: CALLDOG_CONFIG.API_KEY,
-                phone: CALLDOG_CONFIG.TEST_PHONE,
-                dutyPhone: 1, // Используем системные номера CallDog
-                record: {
-                    id: CALLDOG_CONFIG.AUDIO_RECORD_ID // Используем готовый аудиоролик
-                }
+                apiKey: CALLDOG_CONFIG.API_KEY
             })
         });
 

@@ -56,6 +56,9 @@ const AlarmButton: React.FC<AlarmButtonProps> = ({ objects, onAlarmSent }) => {
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
     const [phoneCount, setPhoneCount] = useState<number>(0);
+    const [lastCallTime, setLastCallTime] = useState<number>(0);
+    const [isSpamBlocked, setIsSpamBlocked] = useState<boolean>(false);
+    const [retryAfter, setRetryAfter] = useState<number>(0);
 
     // Стили для темной темы
     const textFieldStyles = {
@@ -82,6 +85,17 @@ const AlarmButton: React.FC<AlarmButtonProps> = ({ objects, onAlarmSent }) => {
             setPhoneCount(0);
         }
 
+        // Проверяем статус CallDog API
+        try {
+            const isAvailable = await checkCallDogStatus();
+            if (!isAvailable) {
+                setError('CallDog API недоступен. Проверьте настройки.');
+            }
+        } catch (err) {
+            console.error('Ошибка проверки CallDog API:', err);
+            setError('Не удалось проверить статус CallDog API.');
+        }
+
         setDialogOpen(true);
     };
 
@@ -102,6 +116,29 @@ const AlarmButton: React.FC<AlarmButtonProps> = ({ objects, onAlarmSent }) => {
             return;
         }
 
+        // Проверяем защиту от спама
+        const now = Date.now();
+        const timeSinceLastCall = now - lastCallTime;
+        const minInterval = 30000; // 30 секунд между вызовами
+
+        if (timeSinceLastCall < minInterval) {
+            const remainingTime = Math.ceil((minInterval - timeSinceLastCall) / 1000);
+            setError(`Слишком частые вызовы. Подождите ${remainingTime} секунд.`);
+            return;
+        }
+
+        // Проверяем блокировку спама
+        if (isSpamBlocked) {
+            const remainingTime = Math.ceil((retryAfter * 1000 - (now - lastCallTime)) / 1000);
+            if (remainingTime > 0) {
+                setError(`CallDog заблокировал запросы как спам. Попробуйте через ${remainingTime} секунд.`);
+                return;
+            } else {
+                setIsSpamBlocked(false);
+                setRetryAfter(0);
+            }
+        }
+
         setLoading(true);
         setError(null);
         setSuccess(null);
@@ -120,11 +157,17 @@ const AlarmButton: React.FC<AlarmButtonProps> = ({ objects, onAlarmSent }) => {
 
             if (result.success) {
                 setSuccess(`Тревожный вызов отправлен! ID: ${result.callId}`);
+                setLastCallTime(now);
                 onAlarmSent?.(true, result.message || 'Тревожный вызов отправлен');
                 setTimeout(() => {
                     handleCloseDialog();
                 }, 3000);
             } else {
+                if (result.isSpamBlocked) {
+                    setIsSpamBlocked(true);
+                    setRetryAfter(result.retryAfter || 300);
+                    setLastCallTime(now);
+                }
                 setError(result.error || 'Ошибка отправки вызова');
                 onAlarmSent?.(false, result.error || 'Ошибка отправки вызова');
             }
@@ -231,6 +274,13 @@ const AlarmButton: React.FC<AlarmButtonProps> = ({ objects, onAlarmSent }) => {
                         </Alert>
                     )}
 
+                    {isSpamBlocked && (
+                        <Alert severity="warning" sx={{ mb: 2 }}>
+                            CallDog заблокировал запросы как спам.
+                            {retryAfter > 0 && ` Попробуйте через ${Math.ceil(retryAfter / 60)} минут.`}
+                        </Alert>
+                    )}
+
                     {/* Информация о количестве номеров */}
                     <Alert severity="info" sx={{ mb: 3 }}>
                         <Typography variant="body2">
@@ -319,17 +369,19 @@ const AlarmButton: React.FC<AlarmButtonProps> = ({ objects, onAlarmSent }) => {
                         variant="contained"
                         color="error"
                         onClick={handleSendAlarm}
-                        disabled={loading || !alarmData.objectId}
+                        disabled={loading || !alarmData.objectId || isSpamBlocked}
                         startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <WarningIcon />}
                         sx={{
-                            backgroundColor: '#d32f2f',
+                            backgroundColor: isSpamBlocked ? '#666' : '#d32f2f',
                             '&:hover': {
-                                backgroundColor: '#b71c1c',
+                                backgroundColor: isSpamBlocked ? '#666' : '#b71c1c',
                             },
                             fontWeight: 'bold'
                         }}
                     >
-                        {loading ? 'Отправка...' : 'АКТИВИРОВАТЬ ТРЕВОГУ'}
+                        {loading ? 'Отправка...' :
+                            isSpamBlocked ? 'ЗАБЛОКИРОВАНО' :
+                                'АКТИВИРОВАТЬ ТРЕВОГУ'}
                     </Button>
                 </DialogActions>
             </Dialog>

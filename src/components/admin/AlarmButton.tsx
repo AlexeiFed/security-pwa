@@ -352,7 +352,7 @@ const AlarmButton: React.FC<AlarmButtonProps> = ({ objects, onAlarmSent }) => {
                             {testLoading ? <CircularProgress size={20} /> : 'Тестовый вызов'}
                         </Button>
                         <Typography variant="body2" color="text.secondary">
-                            Отправить тестовый вызов на +79242074048
+                            Отправить тестовый вызов на +79242074048 (лимит: 1 звонок/день)
                         </Typography>
                     </Box>
                 </DialogContent>

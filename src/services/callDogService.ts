@@ -162,7 +162,8 @@ export async function sendTestCall(phone: string, message: string = 'Тесто�
             needRecording: 0 // Не записываем тестовые звонки
         };
 
-        const response = await fetch(`${CALLDOG_CONFIG.BASE_URL}/create`, {
+        // Отправляем запрос через наш push-server для обхода CORS
+        const response = await fetch(`${process.env.REACT_APP_PUSH_SERVER_URL}/callDog/send`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
